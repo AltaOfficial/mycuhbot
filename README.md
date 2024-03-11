@@ -1,1 +1,1 @@
-# mycuhbot
+# Mycuh Bot
