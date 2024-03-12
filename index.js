@@ -1,6 +1,6 @@
 const { connectToDb, getDb } = require("./db");
 const { checkMyccount, getMycuhBucks, checkPendingRequest, newRequest, REQUEST_STATE, handleButtonResponse, clearAllPendingRequests } = require("./utils");
-const { Client, GatewayIntentBits, Partials, InteractionType, ActivityType, Message, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder} = require("discord.js");
+const { Client, GatewayIntentBits, Partials, ActivityType, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder} = require("discord.js");
 
 const client = new Client({
     intents: [

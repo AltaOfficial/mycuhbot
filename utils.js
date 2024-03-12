@@ -46,31 +46,39 @@ async function changeMycuhBucks(messageId, requestAmount, isRemoving){
     let dbConnection = getDb();
     if(isRemoving){
         await new Promise((resolve, reject) => { // removes bucks
-            dbConnection.collection("users").findOne({pendingIncomingRequest: {messageId: messageId}}).then((document) => {
-                dbConnection.collection("users").UpdateOne(
-                {"pendingIncomingRequest.messageId": messageId},
-                {
-                    $set: {
-                        bucks: document.bucks - requestAmount,
-                        "pendingIncomingRequest.messageId": ""
-                    }
-                },
-                {upsert: true})
-            })
+            dbConnection.collection("users").findOne({"pendingIncomingRequest.messageId": messageId}).then((document) => {
+                if(document){
+                    dbConnection.collection("users").updateOne(
+                        {"pendingIncomingRequest.messageId": messageId},
+                        {
+                            $set: {
+                                bucks: document.bucks - requestAmount,
+                                "pendingIncomingRequest.messageId": ""
+                            }
+                        })
+                }else{
+                    console.log("user not found");
+                }
+            });
+            resolve();
         });
     }else{
         await new Promise((resolve, reject) => { // adds bucks
-            dbConnection.collection("users").findOne({pendingOutgoingRequest: {messageId: messageId}}).then((document) => {
-                dbConnection.collection("users").UpdateOne(
-                {"pendingOutgoingRequest.messageId": messageId}, 
-                {
-                    $set: {
-                        bucks: document.bucks - requestAmount,
-                        "pendingOutgoingRequest.messageId": ""
-                    }
-                },
-                {upsert: true})
-            })
+            dbConnection.collection("users").findOne({"pendingOutgoingRequest.messageId": messageId}).then((document) => {
+                if(document){
+                    dbConnection.collection("users").updateOne(
+                        {"pendingOutgoingRequest.messageId": messageId},
+                        {
+                            $set: {
+                                bucks: document.bucks + requestAmount,
+                                "pendingOutgoingRequest.messageId": ""
+                            }
+                        })
+                }else{
+                    console.log("user not found");
+                }
+            });
+            resolve();
         });
     }
 }
@@ -106,7 +114,7 @@ async function getMyccount(discordUser){
 // Handle transaction requests
 async function newRequest(transactionMessage, sendingUser, receivingUser, requestDetails, mycuhBuckRequest=false){
     let dbConnection = getDb();
-    const EXPIRE_TIME = 60; // 5 minutes
+    const EXPIRE_TIME = 300; // 5 minutes
 
     await new Promise((resolve, reject) => {
         dbConnection.collection("users").updateOne({discordId: sendingUser.user.id}, {$set: {pendingOutgoingRequest: {messageId: transactionMessage.id, requestReason: requestDetails.requestReason, requestAmount: requestDetails.requestAmount}}}, {upsert: true});
@@ -118,21 +126,38 @@ async function newRequest(transactionMessage, sendingUser, receivingUser, reques
     
     let messageTimer = setTimeout(async function() {
         let transferEmbed = new EmbedBuilder();
+        let noConnectedUser = false;
             await new Promise((resolve, reject) => {
-                dbConnection.collection("users").updateOne({discordId: sendingUser.user.id}, {$set: {pendingOutgoingRequest: {messageId: "", requestReason: "", requestAmount: 0}}}, {upsert: true});
-                if(mycuhBuckRequest == false){
-                    dbConnection.collection("users").updateOne({discordId: receivingUser.user.id}, {$set: {pendingIncomingRequest: {messageId: "", requestReason: "", requestAmount: 0}}}, {upsert: true});
+                dbConnection.collection("users").findOne({"pendingOutgoingRequest.messageId": transactionMessage.id})
+                .then((document) => {
+                    if(!document){
+                        resolve("Not found");
+                    }else{
+                        resolve("Found");
+                    }
+                });
+            }).then((result) => {
+                if(result == "Not found"){
+                    noConnectedUser = true;
                 }
-                resolve("Success");
             });
-            if(mycuhBuckRequest == false){
-                transferEmbed.setTitle("Mycuh Bucks Transfer Request")
-                .setDescription(`<@${sendingUser.user.id}> is requesting **${requestDetails.requestAmount.toString()}** mycuh buck(s) from <@${receivingUser.user.id}> to their myccount\nReason: ${requestDetails.requestReason}\nUser Response: **Expired** 🕑`);
-                transactionMessage.edit({embeds: [transferEmbed], components: []});
-            }else{
-                transferEmbed.setTitle("Requesting Mycuh Bucks")
-                .setDescription(`<@${sendingUser.user.id}> is requesting to add **${requestDetails.requestAmount.toString()}** mycuh buck(s) to their myccount\nReason: ${requestDetails.requestReason}\nMycuh Response: **Expired** 🕑`);
-                transactionMessage.edit({content: "", embeds: [transferEmbed], components: []});
+            if(!noConnectedUser){
+                await new Promise((resolve, reject) => {
+                    dbConnection.collection("users").updateOne({discordId: sendingUser.user.id}, {$set: {pendingOutgoingRequest: {messageId: "", requestReason: "", requestAmount: 0}}}, {upsert: true});
+                    if(mycuhBuckRequest == false){
+                        dbConnection.collection("users").updateOne({discordId: receivingUser.user.id}, {$set: {pendingIncomingRequest: {messageId: "", requestReason: "", requestAmount: 0}}}, {upsert: true});
+                    }
+                    resolve("Success");
+                });
+                if(mycuhBuckRequest == false){
+                    transferEmbed.setTitle("Mycuh Bucks Transfer Request")
+                    .setDescription(`<@${sendingUser.user.id}> is requesting **${requestDetails.requestAmount.toString()}** mycuh buck(s) from <@${receivingUser.user.id}> to their myccount\nReason: ${requestDetails.requestReason}\nUser Response: **Expired** 🕑`);
+                    transactionMessage.edit({embeds: [transferEmbed], components: []});
+                }else{
+                    transferEmbed.setTitle("Requesting Mycuh Bucks")
+                    .setDescription(`<@${sendingUser.user.id}> is requesting to add **${requestDetails.requestAmount.toString()}** mycuh buck(s) to their myccount\nReason: ${requestDetails.requestReason}\nMycuh Response: **Expired** 🕑`);
+                    transactionMessage.edit({content: "", embeds: [transferEmbed], components: []});
+                }
             }
     }, EXPIRE_TIME * 1000);
 
@@ -201,19 +226,21 @@ async function handleButtonResponse(interaction) {
     // TODO: check for expired transfer buttons dont crash server
     
 
-    if(isMycuhRequest && isMycuh){
+    if(isMycuhRequest && isMycuh && response != "Message id not attached to a needed user"){
         if(mycuhAcceptedRequest == false){
+            await clearPendingRequest(sendingUser.discordId, REQUEST_STATE.OUTGOING); // clears pending request from sending user
             transferEmbed.setTitle("Requesting Mycuh Bucks")
             .setColor("Red")
             .setDescription(`<@${sendingUser.discordId}> is requesting to add **${requestDetails.requestAmount.toString()}** mycuh buck(s) to their myccount\nReason: ${requestDetails.requestReason}\nMycuh Response: **Denied** ❌`);
-            transactionMessage.edit({embeds: [transferEmbed], components: []});
+            interaction.message.edit({content: "", embeds: [transferEmbed], components: []});
             return;
         }else{
+            await changeMycuhBucks(interaction.message.id, requestDetails.requestAmount, false);
+            await clearPendingRequest(sendingUser.discordId, REQUEST_STATE.OUTGOING); // clears pending request from sending user
             transferEmbed.setTitle("Requesting Mycuh Bucks")
             .setColor("Green")
             .setDescription(`<@${interaction.user.id}> is requesting to add **${requestDetails.requestAmount.toString()}** mycuh buck(s) to their myccount\nReason: ${requestDetails.requestReason}\nMycuh Response: **Accepted** ✅`);
-            transactionMessage.edit({embeds: [transferEmbed], components: []});
-            await changeMycuhBucks(interaction.message.id, requestDetails.requestAmount, false);
+            interaction.message.edit({content: "", embeds: [transferEmbed], components: []});
             return;
         }
     }else if(isMycuhRequest && !isMycuh){
@@ -258,26 +285,8 @@ async function handleButtonResponse(interaction) {
         transferEmbed.setTitle("Mycuh Bucks Transfer Request")
         .setColor("Red")
         .setDescription(`<@${sendingUser.discordId}> is requesting **${requestDetails.requestAmount.toString()}** mycuh buck(s) from <@${receivingUserId}> to their myccount\nReason: ${requestDetails.requestReason}\nUser Response: **Denied** ❌`);
-        await new Promise((resolve, reject) => {
-            dbConnection.collection("users").updateOne({"pendingIncomingRequest.messageId": interaction.message.id}, 
-            {
-                $set: {
-                    "pendingIncomingRequest.messageId": ""
-                }
-            },
-            {upsert: true});
-            resolve();
-        });
-        await new Promise((resolve, reject) => {
-            dbConnection.collection("users").updateOne({"pendingOutgoingRequest.messageId": interaction.message.id}, 
-            {
-                $set: {
-                    "pendingOutgoingRequest.messageId": ""
-                }
-            },
-            {upsert: true});
-            resolve();
-        });
+        await clearPendingRequest(receivingUserId, REQUEST_STATE.INCOMING); // clears pending request from receiving user
+        await clearPendingRequest(sendingUser.discordId, REQUEST_STATE.OUTGOING); // clears pending request from sending user
         interaction.message.edit({embeds: [transferEmbed], components: []});
     }else if(response == "Accepted"){
         transferEmbed.setTitle("Mycuh Bucks Transfer Request")
@@ -287,9 +296,38 @@ async function handleButtonResponse(interaction) {
         // remove bucks from receiving user and add to sending user
         await changeMycuhBucks(interaction.message.id, requestDetails.requestAmount, false); // adds mycuh bucks
         await changeMycuhBucks(interaction.message.id, requestDetails.requestAmount, true); // removes mycuh bucks
+        await clearPendingRequest(receivingUserId, REQUEST_STATE.INCOMING); // clears pending request from receiving user
+        await clearPendingRequest(sendingUser.discordId, REQUEST_STATE.OUTGOING); // clears pending request from sending user
     }else if("Message id not attached to a needed user"){
         interaction.reply({content: "This request has already expired", ephemeral: true});
         interaction.message.delete();
+    }
+}
+
+async function clearPendingRequest(discordUserId, incomingOrOutgoing){
+    let dbConnection = getDb();
+    if(incomingOrOutgoing == REQUEST_STATE.INCOMING){
+        await new Promise((resolve, reject) => {
+            dbConnection.collection("users").updateOne({discordId: discordUserId}, 
+            {
+                $set: {
+                    "pendingIncomingRequest.messageId": ""
+                }
+            },
+            {upsert: true});
+            resolve();
+        });
+    }else{
+        await new Promise((resolve, reject) => {
+            dbConnection.collection("users").updateOne({discordId: discordUserId}, 
+            {
+                $set: {
+                    "pendingOutgoingRequest.messageId": ""
+                }
+            },
+            {upsert: true});
+            resolve();
+        });
     }
 }
 
