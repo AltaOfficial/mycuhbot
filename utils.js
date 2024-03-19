@@ -239,7 +239,7 @@ async function handleButtonResponse(interaction) {
             await clearPendingRequest(sendingUser.discordId, REQUEST_STATE.OUTGOING); // clears pending request from sending user
             transferEmbed.setTitle("Requesting Mycuh Bucks")
             .setColor("Green")
-            .setDescription(`<@${interaction.user.id}> is requesting to add **${requestDetails.requestAmount.toString()}** mycuh buck(s) to their myccount\nReason: ${requestDetails.requestReason}\nMycuh Response: **Accepted** ✅`);
+            .setDescription(`<@${sendingUser.discordId}> is requesting to add **${requestDetails.requestAmount.toString()}** mycuh buck(s) to their myccount\nReason: ${requestDetails.requestReason}\nMycuh Response: **Accepted** ✅`);
             interaction.message.edit({content: "", embeds: [transferEmbed], components: []});
             return;
         }
