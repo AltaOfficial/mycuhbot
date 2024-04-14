@@ -17,6 +17,14 @@ const commands = [
         }]
     },
     {
+        name: "addmycuhproduct",
+        description: "Create/Update a product in the mycuh prices channel"
+    },
+    {
+        name: "removemycuhproduct",
+        description: "Create a new product in the mycuh prices channel"
+    },
+    {
         name: "request",
         description: "Ask mycuh to receive mycuh buck(s)",
         options: [{

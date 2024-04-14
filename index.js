@@ -1,6 +1,6 @@
 const { connectToDb, getDb } = require("./db");
 const { checkMyccount, getMycuhBucks, checkPendingRequest, newRequest, REQUEST_STATE, handleButtonResponse, clearAllPendingRequests } = require("./utils");
-const { Client, GatewayIntentBits, Partials, ActivityType, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder} = require("discord.js");
+const { Client, GatewayIntentBits, Partials, ActivityType, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, Events, ModalBuilder, TextInputBuilder, TextInputStyle} = require("discord.js");
 
 const client = new Client({
     intents: [
@@ -45,8 +45,59 @@ client.on("interactionCreate", async (interaction) => {
             switch(interaction.commandName){
                 // Displays amount of mycuh bucks user has
                 case "balance":
-                    let balance = await getMycuhBucks(interaction);
-                    interaction.reply({content: `You have **${balance}** mycuh bucks 💵`, ephemeral: false});
+                    if(interaction.member.roles.cache.has(process.env.MYCUH_ROLE_ID)){
+                        interaction.reply({content: "You're mycuh you have unlimited mycuh bucks"});
+                    }else{
+                        let balance = await getMycuhBucks(interaction);
+                        if(balance == null){
+                            interaction.reply({content: "Connection with database is slow, try again"});
+                        }else{
+                            interaction.reply({content: `You have **${balance}** mycuh bucks 💵`, ephemeral: false});
+                        }
+                    }
+                break;
+
+                case "addmycuhproduct": 
+                    // TODO: Make it so only mycuh role can use this command
+                    let addMycuhProductModal = new ModalBuilder()
+                    .setCustomId("addMycuhProductModal")
+                    .setTitle("Create a new Mycuh Product");
+
+                    let mycuhProductName = new TextInputBuilder()
+                        .setCustomId("mycuhProductName")
+                        .setLabel("Enter the product name")
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true);
+
+                    let mycuhProductPrice = new TextInputBuilder()
+                        .setCustomId("mycuhProductPrice")
+                        .setLabel("Enter the price")
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true);
+                    
+                    let mycuhProductDescription = new TextInputBuilder()
+                        .setCustomId("myuchProductDescription")
+                        .setLabel("Enter the description")
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true);
+
+                    let firstActionRow = new ActionRowBuilder().addComponents(mycuhProductName);
+                    let secondActionRow = new ActionRowBuilder().addComponents(mycuhProductPrice);
+                    let thirdActionRow = new ActionRowBuilder().addComponents(mycuhProductDescription);
+
+                    addMycuhProductModal.addComponents(firstActionRow, secondActionRow, thirdActionRow);
+
+                    interaction.showModal(addMycuhProductModal);
+                break;
+                
+                case "removemycuhproduct":
+                    // TODO: Make it so only mycuh role can use this command
+                    if(interaction.member.roles.cache.has(process.env.MYCUH_ROLE_ID)){
+                        interaction.reply({content: "its not done yet", ephemeral: true});
+                        break;
+                    }else{
+                        interaction.reply({content: "Only mycuhhhh can use this command", ephemeral: true});
+                    }
                 break;
         
                 // Request mycuh bucks from mycuhhhh himself
