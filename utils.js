@@ -42,6 +42,36 @@ async function checkMyccount(discordUser){
     return response;
 }
 
+async function embdedMycuhPrices(){
+    let dbConnection = getDb();
+    await new Promise((resolve, reject) => {
+        dbConnection.collection("mycuhProducts").findOne({})
+    });
+    // TODO: delete everything in mycuh prices channel then post embed of mycuh prices from database
+    // TODO: see in collection "mycuhProducts" in the products document whether there is a sale and for what amount off
+
+    let mycuhPricesEmbed = new EmbedBuilder()
+    .setCustomId()
+}
+
+async function addMycuhProduct(productName, productPrice, productDescription){
+    let dbConnection = getDb();
+    // TODO: adds or updates mycuh products to database with price and description and percentage off for possible future use
+    // if mycuhProduct name already exists update
+    embdedMycuhPrices();
+}
+
+async function removeMycuhProduct(){
+    let dbConnection = getDb();
+    // TODO: remove mycuh product from database
+}
+
+async function setMycuhProductsSale(isRemovingSale, percentageOff=0){
+    if(isSettingSale){
+        // TODO: go into collection "mycuhProducts" in document "products" and change isOnSale to true and change percentage amount off to specified
+    }
+}
+
 async function changeMycuhBucks(messageId, requestAmount, isRemoving){
     let dbConnection = getDb();
     if(isRemoving){
@@ -86,6 +116,9 @@ async function changeMycuhBucks(messageId, requestAmount, isRemoving){
 // Returns mycuh bucks
 async function getMycuhBucks(discordUser){
     let document = await getMyccount(discordUser);
+    if(document == null){
+        return null;
+    }
     return document.bucks;
 }
 
