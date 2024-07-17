@@ -4,10 +4,13 @@ const {
   getMycuhBucks,
   checkPendingRequest,
   newRequest,
-  embdedMycuhPrices,
+  embedMycuhPrices,
   REQUEST_STATE,
   handleButtonResponse,
+  handleModalSubmit,
   clearAllPendingRequests,
+  removeMycuhProduct,
+  setServerDetails,
 } = require("./utils");
 const {
   Client,
@@ -23,6 +26,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require("discord.js");
+const cron = require("node-cron");
 
 let client = new Client({
   intents: [
@@ -34,19 +38,24 @@ let client = new Client({
   partials: [Partials.Message, Partials.Channel],
 });
 
+cron.schedule("0 0 * * *", () => {
+  embedMycuhPrices(client);
+});
+
 client.on("ready", () => {
   console.log(`✅ ${client.user.tag} is now online.`);
 
   // Connect to database
-  connectToDb((err) => {
+  connectToDb(async (err) => {
     if (!err) {
       console.log("Successfully connected to database");
     } else {
       console.log("Failed to connect to database, error: " + err);
     }
     dbConnection = getDb();
+    await setServerDetails(dbConnection, client);
     clearAllPendingRequests();
-    init();
+    embedMycuhPrices(client);
   });
 
   client.user.setActivity({
@@ -118,7 +127,7 @@ client.on("interactionCreate", async (interaction) => {
             .setRequired(true);
 
           let mycuhProductDescription = new TextInputBuilder()
-            .setCustomId("myuchProductDescription")
+            .setCustomId("mycuhProductDescription")
             .setLabel("Description")
             .setPlaceholder("Enter the description")
             .setStyle(TextInputStyle.Paragraph)
@@ -150,7 +159,22 @@ client.on("interactionCreate", async (interaction) => {
         case "removemycuhproduct":
           // TODO: Make it so only mycuh role can use this command
           if (interaction.member.roles.cache.has(process.env.MYCUH_ROLE_ID)) {
-            interaction.reply({ content: "its not done yet", ephemeral: true });
+            let productName = interaction.options.get(
+              "remove-product-name"
+            ).value;
+            let removedProduct = await removeMycuhProduct(productName);
+            if (removedProduct.success) {
+              interaction.reply({
+                content: "Product removed successfully",
+                ephemeral: true,
+              });
+            } else {
+              interaction.reply({
+                content: "Failed to remove product: " + removedProduct.error,
+                ephemeral: true,
+              });
+            }
+
             break;
           } else {
             interaction.reply({
@@ -346,10 +370,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   } else if (interaction.isButton()) {
     await handleButtonResponse(interaction);
+  } else if (interaction.isModalSubmit()) {
+    await handleModalSubmit(interaction);
   }
 });
-
-async function init() {
-  // Send mycuh prices embed to mycuh prices channel
-  embdedMycuhPrices(client);
-}

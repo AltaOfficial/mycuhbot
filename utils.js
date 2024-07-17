@@ -1,16 +1,31 @@
 const { ObjectId } = require("mongodb");
 const { getDb } = require("./db");
-const { EmbedBuilder } = require("discord.js");
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require("discord.js");
 
 const REQUEST_STATE = {
   INCOMING: 0,
   OUTGOING: 1,
 };
 
-// Checking to see if users discord id is connected to a myccount
-// or creates one if one doesnt exist
+let mycuhProductsList = [];
+
+// this file has gotten so fat man...
+
+/**
+ * Checks to see if users discord id is connected to a myccount
+ * or creates one if one doesnt exist.
+ * @param {*} discordUser
+ * @returns "Success" or "Created" status
+ */
 async function checkMyccount(discordUser) {
-  let dbConnection = getDb();
   let response;
 
   if (discordUser == undefined) {
@@ -52,21 +67,64 @@ async function checkMyccount(discordUser) {
   });
   return response;
 }
+/**
+ * Sets database connection and discord server
+ * client global variables.
+ * @param {*} databaseConnection
+ * @param {*} serverClient
+ */
+async function setServerDetails(databaseConnection, serverClient) {
+  dbConnection = databaseConnection;
+  client = serverClient;
+}
 
-async function embdedMycuhPrices(client) {
-  let dbConnection = await getDb();
-  let mycuhProducts;
-  let mycuhPricesChannel = client.channels.cache.get(
+async function embedMycuhPrices() {
+  let mycuhPricesChannel = await client.channels.cache.get(
     process.env.MYCUH_PRICES_CHANNEL_ID
   );
+  mycuhProductsList = [];
 
-  mycuhProducts = await dbConnection.collection("mycuhProducts").findOne({});
+  let mycuhProducts = await dbConnection.collection("products").find();
 
-  // TODO: delete everything in mycuh prices channel then post embed of mycuh prices from database
   // TODO: see in collection "mycuhProducts" in the products document whether there is a sale and for what amount off
   let mycuhPricesEmbed = new EmbedBuilder();
-  if (mycuhProducts != null) {
+  if (await mycuhProducts.hasNext()) {
+    let num = 0;
+    while (await mycuhProducts.hasNext()) {
+      num++;
+      let product = await mycuhProducts.next();
+      mycuhProductsList[num] = product.productName;
+      mycuhPricesEmbed
+        .setTitle("Mycuh Products Store")
+        .setThumbnail(
+          "https://media.discordapp.net/attachments/1022643214278209558/1262638722969763950/IMG_20191116_231523_168.jpg?ex=66975372&is=669601f2&hm=f64f8fcade1df3c6077df84cd6bed4e5aa41385ca22e66bcb853866c2978b3e7&=&format=webp"
+        )
+        .addFields({
+          name: `#${num} ${product.productName}`,
+          value: `Price: **ℳ︁ ${product.productPrice}**\nCost Scales: **${
+            product.productCostScales ? "Yes" : "No"
+          }**\nDescription: **${product.productDescription}**`,
+          inline: true,
+        })
+        .setFooter({
+          text: "Last Updated",
+        })
+        .setTimestamp();
+    }
+    let buyButton = new ButtonBuilder()
+      .setStyle(ButtonStyle.Success)
+      .setCustomId("user_product_buy_button")
+      .setLabel("Redeem Mycuh Bucks");
+    let actionRow = new ActionRowBuilder().addComponents([buyButton]);
+    await deleteAllMessagesInChannel(mycuhPricesChannel);
+
+    mycuhPricesChannel.send({
+      content: "",
+      embeds: [mycuhPricesEmbed],
+      components: [actionRow],
+    });
   } else {
+    await deleteAllMessagesInChannel(mycuhPricesChannel);
     mycuhPricesEmbed
       .setDescription(
         "Hmm seems like theres no mycuh products, tell mycuhhh to stop being selfish and add some."
@@ -83,27 +141,88 @@ async function embdedMycuhPrices(client) {
   }
 }
 
-async function addMycuhProduct(
-  productName,
-  productPrice,
-  productDescription,
-  productCostScales
-) {
-  let dbConnection = getDb();
-  // TODO: adds or updates mycuh products to database with price and description and percentage off for possible future use
-  // if mycuhProduct name already exists update
-  // let mycuhProductByName = await dbConnection.collection("mycuhProducts").findOne({})
-  console.log(productName);
-  console.log(productPrice);
-  console.log(productDescription);
-  console.log(productCostScales);
+async function addMycuhProduct(interaction) {
+  let mycuhProductExists = await dbConnection.collection("products").findOne({
+    productName: interaction.fields.getTextInputValue("mycuhProductName"),
+  });
+  if (mycuhProductExists != undefined || mycuhProductExists != null)
+    return interaction.reply({
+      content: "This product already exists",
+      ephemeral: true,
+    });
+  productName = ensureType(
+    "string",
+    interaction.fields.getTextInputValue("mycuhProductName")
+  );
+  productPrice = ensureType(
+    "integer",
+    interaction.fields.getTextInputValue("mycuhProductPrice")
+  );
+  productDescription = ensureType(
+    "string",
+    interaction.fields.getTextInputValue("mycuhProductDescription")
+  );
+  productCostScales = ensureType(
+    "boolean",
+    interaction.fields.getTextInputValue("mycuhProductCostScales")
+  );
+  if (!productName.success)
+    return interaction.reply({
+      content: "Product name invalid",
+      ephemeral: true,
+    });
+  else if (!productPrice.success)
+    return interaction.reply({
+      content: "Product price invalid",
+      ephemeral: true,
+    });
+  else if (!productDescription.success)
+    return interaction.reply({
+      content: "Product description invalid",
+      ephemeral: true,
+    });
+  else if (!productCostScales.success)
+    return interaction.reply({
+      content: "Product cost scales input invalid",
+      ephemeral: true,
+    });
 
-  embdedMycuhPrices();
+  await dbConnection.collection("products").insertOne({
+    productName: productName.value,
+    productPrice: productPrice.value,
+    productDescription: productDescription.value,
+    productCostScales: productCostScales.value,
+    percentageOff: 0,
+  });
+  interaction.reply({
+    content: `${productName.value} added to products list`,
+    ephemeral: true,
+  });
+
+  embedMycuhPrices();
 }
 
-async function removeMycuhProduct() {
-  let dbConnection = getDb();
-  // TODO: remove mycuh product from database
+/**
+ * Removes a mycuh product by name, from the database.
+ * @param {*} productName
+ * @returns success status and error (if one occured)
+ */
+async function removeMycuhProduct(productName) {
+  try {
+    let deletedProduct = await dbConnection
+      .collection("products")
+      .deleteOne({ productName: productName });
+    if (!deletedProduct.deletedCount) {
+      throw new Error("Product does not exist");
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error,
+    };
+  }
+  embedMycuhPrices();
+  return { success: true };
 }
 
 async function setMycuhProductsSale(isRemovingSale, percentageOff = 0) {
@@ -113,7 +232,6 @@ async function setMycuhProductsSale(isRemovingSale, percentageOff = 0) {
 }
 
 async function changeMycuhBucks(messageId, requestAmount, isRemoving) {
-  let dbConnection = getDb();
   if (isRemoving) {
     await new Promise((resolve, reject) => {
       // removes bucks
@@ -163,7 +281,11 @@ async function changeMycuhBucks(messageId, requestAmount, isRemoving) {
   }
 }
 
-// Returns mycuh bucks
+/**
+ * Returns amount of mycuh bucks the provided user has.
+ * @param {*} discordUser
+ * @returns
+ */
 async function getMycuhBucks(discordUser) {
   let document = await getMyccount(discordUser);
   if (document == null) {
@@ -172,9 +294,12 @@ async function getMycuhBucks(discordUser) {
   return document.bucks;
 }
 
-// Returns a myccount
+/**
+ * Gets myccount of provided user.
+ * @param {*} discordUser
+ * @returns myccount document from database
+ */
 async function getMyccount(discordUser) {
-  let dbConnection = getDb();
   await checkMyccount(discordUser);
   let response;
 
@@ -196,6 +321,14 @@ async function getMyccount(discordUser) {
   return response;
 }
 
+async function deleteAllMessagesInChannel(channel) {
+  let fetchedMessagesData;
+  do {
+    fetchedMessagesData = await channel.messages.fetch({ limit: 100 });
+    channel.bulkDelete(fetchedMessagesData, true);
+  } while (fetchedMessagesData > 1);
+}
+
 // Handle transaction requests
 async function newRequest(
   transactionMessage,
@@ -204,7 +337,6 @@ async function newRequest(
   requestDetails,
   mycuhBuckRequest = false
 ) {
-  let dbConnection = getDb();
   const EXPIRE_TIME = 300; // 5 minutes
 
   await new Promise((resolve, reject) => {
@@ -239,7 +371,7 @@ async function newRequest(
     resolve("Success");
   });
 
-  let messageTimer = setTimeout(async function () {
+  let messageTimer = setTimeout(async () => {
     let transferEmbed = new EmbedBuilder();
     let noConnectedUser = false;
     await new Promise((resolve, reject) => {
@@ -326,7 +458,6 @@ async function newRequest(
 }
 
 async function checkPendingRequest(incomingOrOutgoing, discordUser) {
-  let dbConnection = getDb();
   let response;
   await checkMyccount(discordUser);
 
@@ -356,10 +487,110 @@ async function checkPendingRequest(incomingOrOutgoing, discordUser) {
   return response;
 }
 
+async function handleModalSubmit(interaction) {
+  switch (interaction.customId) {
+    case "addMycuhProductModal":
+      addMycuhProduct(interaction);
+      break;
+    case "userProductBuyNumberModal":
+      if (await checkPendingRequest(REQUEST_STATE.OUTGOING, interaction)) {
+        return interaction.reply({
+          content:
+            "You already have a pending outgoing request, wait for it to expire",
+        });
+      }
+      let productNumber = ensureType(
+        "integer",
+        interaction.fields.getTextInputValue("userProductNumber")
+      );
+      if (!productNumber.success) {
+        return interaction.reply({
+          content: "Input is not a number",
+          ephemeral: true,
+        });
+      } else if (mycuhProductsList[productNumber.value] == undefined) {
+        return interaction.reply({
+          content:
+            "A product with that number doesnt exist (make sure not to include the '#')",
+          ephemeral: true,
+        });
+      }
+
+      let productQuantity;
+      let product = await dbConnection
+        .collection("products")
+        .findOne({ productName: mycuhProductsList[productNumber.value] });
+      let confirmPurchaseEmbed = new EmbedBuilder();
+
+      if (product.productCostScales) {
+        productQuantity = ensureType(
+          "integer",
+          interaction.fields.getTextInputValue("userProductQuantity")
+        );
+        if (!productQuantity.success) {
+          return interaction.reply({
+            content: "Error: The product cost scales input valid quantity",
+          });
+        } else if (productQuantity.value <= 0) {
+          return interaction.reply({
+            content:
+              "You cant just buy nothing sir... (Error: input quantity 0 or less)",
+          });
+        }
+        confirmPurchaseEmbed.addFields([
+          {
+            name: "Quantity to redeem",
+            inline: true,
+            value: `Quanity: ${productQuantity.value}`,
+          },
+        ]);
+      }
+
+      confirmPurchaseEmbed
+        .setTimestamp()
+        .setTitle("Confirm Redeem")
+        .setColor("Green")
+        .addFields(
+          {
+            name: "Total Price",
+            inline: true,
+            value: `Cost: **ℳ︁ ${
+              product.productCostScales
+                ? product.productPrice * productQuantity.value
+                : product.productPrice
+            }**`,
+          },
+          {
+            name: "Description",
+            inline: false,
+            value: product.productDescription,
+          }
+        );
+
+      let confirmButton = new ButtonBuilder()
+        .setCustomId("user_confirm_redeem_button")
+        .setStyle(ButtonStyle.Success)
+        .setLabel("Request Redemption");
+
+      let actionRow = new ActionRowBuilder().addComponents([confirmButton]);
+      interaction.reply({
+        content: "",
+        embeds: [confirmPurchaseEmbed],
+        ephemeral: true,
+        components: [actionRow],
+      });
+
+      break;
+  }
+}
+
 // Handles when a user clicks the accept or deny button under a request
 async function handleButtonResponse(interaction) {
   let response;
-  let dbConnection = getDb();
+  let userConfirmRedeemRequest =
+    interaction.customId == "user_confirm_redeem_button" ? true : false;
+  let userBuyRequest =
+    interaction.customId == "user_product_buy_button" ? true : false;
   let userAcceptedRequest =
     interaction.customId == "user_accept_button" ? true : false;
   let mycuhAcceptedRequest =
@@ -378,7 +609,7 @@ async function handleButtonResponse(interaction) {
   await new Promise((resolve, reject) => {
     dbConnection
       .collection("users")
-      .findOne({ "pendingOutgoingRequest.messageId": interaction.message.id })
+      .findOne({"pendingOutgoingRequest.messageId": interaction.message.id })
       .then((document) => {
         if (document) {
           resolve(document);
@@ -393,11 +624,11 @@ async function handleButtonResponse(interaction) {
       sendingUser = result;
       requestDetails = {
         requestAmount: sendingUser.pendingOutgoingRequest.requestAmount,
-        requestReason: sendingUser.pendingIncomingRequest.requestReason,
+        requestReason: sendingUser.pendingOutgoingRequest.requestReason,
       };
     }
   });
-  // TODO: check for expired transfer buttons dont crash server
+  // TODO: check that expired transfer buttons dont crash server
 
   if (
     isMycuhRequest &&
@@ -439,16 +670,50 @@ async function handleButtonResponse(interaction) {
             requestDetails.requestReason
           }\nMycuh Response: **Accepted** ✅`
         );
-      interaction.message.edit({
+      return interaction.message.edit({
         content: "",
         embeds: [transferEmbed],
         components: [],
       });
-      return;
     }
+  } else if (userConfirmRedeemRequest) {
+    // TODO: create request
+
+    return interaction.reply({
+      content: "✅ Request created, expires in 5 minutes",
+      ephemeral: true,
+    });
+  } else if (userBuyRequest && isMycuh) {
+    return interaction.reply({
+      content: "Noooo dood, only users can do this",
+      ephemeral: true,
+    });
   } else if (isMycuhRequest && !isMycuh) {
     interaction.reply({ content: 'You\'re not "him" 🦸', ephemeral: true });
     return;
+  } else if (userBuyRequest) {
+    let productNumberInput = new TextInputBuilder()
+      .setCustomId("userProductNumber")
+      .setStyle(TextInputStyle.Short)
+      .setLabel("Enter product number (DONT INCLUDE THE '#')");
+    let productQuantityInput = new TextInputBuilder()
+      .setCustomId("userProductQuantity")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setLabel("Input quantity");
+    let productNumberActionRow = new ActionRowBuilder().addComponents([
+      productNumberInput,
+    ]);
+    let productQuantityActionRow = new ActionRowBuilder().addComponents([
+      productQuantityInput,
+    ]);
+
+    let userBuyRequestModal = new ModalBuilder()
+      .setCustomId("userProductBuyNumberModal")
+      .setTitle("Enter mycuh product number and quantity")
+      .addComponents([productNumberActionRow, productQuantityActionRow]);
+
+    interaction.showModal(userBuyRequestModal);
   } else {
     await new Promise((resolve, reject) => {
       dbConnection
@@ -535,7 +800,10 @@ async function handleButtonResponse(interaction) {
     ); // removes mycuh bucks
     await clearPendingRequest(receivingUserId, REQUEST_STATE.INCOMING); // clears pending request from receiving user
     await clearPendingRequest(sendingUser.discordId, REQUEST_STATE.OUTGOING); // clears pending request from sending user
-  } else if ("Message id not attached to a needed user") {
+  } else if (
+    response == "Message id not attached to a needed user" &&
+    !userBuyRequest
+  ) {
     interaction.reply({
       content: "This request has already expired",
       ephemeral: true,
@@ -545,7 +813,6 @@ async function handleButtonResponse(interaction) {
 }
 
 async function clearPendingRequest(discordUserId, incomingOrOutgoing) {
-  let dbConnection = getDb();
   if (incomingOrOutgoing == REQUEST_STATE.INCOMING) {
     await new Promise((resolve, reject) => {
       dbConnection.collection("users").updateOne(
@@ -576,7 +843,6 @@ async function clearPendingRequest(discordUserId, incomingOrOutgoing) {
 }
 
 async function clearAllPendingRequests() {
-  let dbConnection = getDb();
   // Expire past pending requests
   await new Promise((resolve, reject) => {
     dbConnection.collection("users").updateMany(
@@ -600,24 +866,45 @@ async function clearAllPendingRequests() {
   });
 }
 
-async function ensureType(type, text) {
+function ensureType(type, text) {
   switch (type) {
     case "integer":
-      break;
+      try {
+        if (parseInt(text).toString() == "NaN")
+          throw new Error("error changing text to number");
+      } catch (err) {
+        return { success: false };
+      }
+      return { success: true, value: parseInt(text) };
 
     case "string":
-      break;
+      try {
+        text.toString();
+      } catch (err) {
+        return { success: false };
+      }
+      return { success: true, value: text };
 
     case "boolean":
-      break;
+      if (text.toLowerCase() == "true" || text.toLowerCase() == "yes") {
+        return { success: true, value: true };
+      } else if (text.toLowerCase() == "false" || text.toLowerCase() == "no") {
+        return { success: true, value: false };
+      }
+      return { success: false };
+    default:
+      throw new Error("ensureType type is invalid");
   }
 }
 
 exports.checkMyccount = checkMyccount;
 exports.addMycuhProduct = addMycuhProduct;
+exports.removeMycuhProduct = removeMycuhProduct;
 exports.getMycuhBucks = getMycuhBucks;
 exports.ensureType = ensureType;
-exports.embdedMycuhPrices = embdedMycuhPrices;
+exports.setServerDetails = setServerDetails;
+exports.handleModalSubmit = handleModalSubmit;
+exports.embedMycuhPrices = embedMycuhPrices;
 exports.checkPendingRequest = checkPendingRequest;
 exports.clearAllPendingRequests = clearAllPendingRequests;
 exports.newRequest = newRequest;
