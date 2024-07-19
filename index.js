@@ -1,46 +1,41 @@
 const { connectToDb, getDb } = require("./db");
+const { getClient, loginClientToDiscord } = require("./utilities/serverClient");
 const {
   checkMyccount,
   getMycuhBucks,
+} = require("./utilities/myccount/myccountUtils");
+const {
+  handleButtonResponse,
+} = require("./utilities/handlers/handleButtonResponse");
+const { handleModalSubmit } = require("./utilities/handlers/handleModalSubmit");
+const {
+  removeMycuhProduct,
+} = require("./utilities/products/mycuhProductsUtil");
+const {
   checkPendingRequest,
   newRequest,
-  embedMycuhPrices,
   REQUEST_STATE,
-  handleButtonResponse,
-  handleModalSubmit,
   clearAllPendingRequests,
-  removeMycuhProduct,
   setServerDetails,
-} = require("./utils");
+} = require("./utilities/utils");
+const { embedMycuhPrices } = require("./utilities/embedMycuhPrices");
 const {
-  Client,
-  GatewayIntentBits,
-  Partials,
   ActivityType,
   EmbedBuilder,
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
-  Events,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require("discord.js");
 const cron = require("node-cron");
 
-let client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-  ],
-  partials: [Partials.Message, Partials.Channel],
+cron.schedule("0 0 * * *", () => {
+  embedMycuhPrices();
 });
 
-cron.schedule("0 0 * * *", () => {
-  embedMycuhPrices(client);
-});
+let client = getClient();
 
 client.on("ready", () => {
   console.log(`✅ ${client.user.tag} is now online.`);
@@ -53,9 +48,9 @@ client.on("ready", () => {
       console.log("Failed to connect to database, error: " + err);
     }
     dbConnection = getDb();
-    await setServerDetails(dbConnection, client);
+    await setServerDetails();
     clearAllPendingRequests();
-    embedMycuhPrices(client);
+    embedMycuhPrices();
   });
 
   client.user.setActivity({
@@ -64,7 +59,7 @@ client.on("ready", () => {
   });
 });
 
-client.login(process.env.DISCORD_TOKEN);
+loginClientToDiscord();
 
 // handle commands
 client.on("interactionCreate", async (interaction) => {
@@ -83,6 +78,7 @@ client.on("interactionCreate", async (interaction) => {
           if (interaction.member.roles.cache.has(process.env.MYCUH_ROLE_ID)) {
             interaction.reply({
               content: "You're mycuh you have unlimited mycuh bucks",
+              ephemeral: true,
             });
           } else {
             let balance = await getMycuhBucks(interaction);
@@ -93,7 +89,6 @@ client.on("interactionCreate", async (interaction) => {
             } else {
               interaction.reply({
                 content: `You have **${balance}** mycuh bucks 💵`,
-                ephemeral: false,
               });
             }
           }
@@ -101,63 +96,61 @@ client.on("interactionCreate", async (interaction) => {
 
         case "addmycuhproduct":
           // TODO: Make it so only mycuh role can use this command
-          let addMycuhProductModal = new ModalBuilder()
-            .setCustomId("addMycuhProductModal")
-            .setTitle("Create a new Mycuh Product");
+          if (interaction.member.roles.cache.has(process.env.MYCUH_ROLE_ID)) {
+            let addMycuhProductModal = new ModalBuilder()
+              .setCustomId("addMycuhProductModal")
+              .setTitle("Create a new Mycuh Product");
 
-          let mycuhProductName = new TextInputBuilder()
-            .setCustomId("mycuhProductName")
-            .setLabel("Product Name")
-            .setPlaceholder("Enter the product name")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
+            let firstActionRow = new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("mycuhProductName")
+                .setLabel("Product Name")
+                .setPlaceholder("Enter the product name")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            );
+            let secondActionRow = new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("mycuhProductPrice")
+                .setLabel("Price")
+                .setPlaceholder("Enter the price")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            );
+            let thirdActionRow = new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("mycuhProductCostScales")
+                .setLabel("Does the cost scale?")
+                .setPlaceholder("Type Yes or no")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            );
+            let fourthActionRow = new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("mycuhProductDescription")
+                .setLabel("Description")
+                .setPlaceholder("Enter the description")
+                .setStyle(TextInputStyle.Paragraph)
+                .setRequired(true)
+            );
 
-          let mycuhProductPrice = new TextInputBuilder()
-            .setCustomId("mycuhProductPrice")
-            .setLabel("Price")
-            .setPlaceholder("Enter the price")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
+            addMycuhProductModal.addComponents(
+              firstActionRow,
+              secondActionRow,
+              thirdActionRow,
+              fourthActionRow
+            );
 
-          let mycuhProductCostScales = new TextInputBuilder()
-            .setCustomId("mycuhProductCostScales")
-            .setLabel("Does the cost scale?")
-            .setPlaceholder("Type Yes or no")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true);
-
-          let mycuhProductDescription = new TextInputBuilder()
-            .setCustomId("mycuhProductDescription")
-            .setLabel("Description")
-            .setPlaceholder("Enter the description")
-            .setStyle(TextInputStyle.Paragraph)
-            .setRequired(true);
-
-          let firstActionRow = new ActionRowBuilder().addComponents(
-            mycuhProductName
-          );
-          let secondActionRow = new ActionRowBuilder().addComponents(
-            mycuhProductPrice
-          );
-          let thirdActionRow = new ActionRowBuilder().addComponents(
-            mycuhProductCostScales
-          );
-          let fourthActionRow = new ActionRowBuilder().addComponents(
-            mycuhProductDescription
-          );
-
-          addMycuhProductModal.addComponents(
-            firstActionRow,
-            secondActionRow,
-            thirdActionRow,
-            fourthActionRow
-          );
-
-          interaction.showModal(addMycuhProductModal);
+            interaction.showModal(addMycuhProductModal);
+          } else {
+            interaction.reply({
+              content: "Only mycuhhhh can use this command",
+              ephemeral: true,
+            });
+          }
           break;
 
         case "removemycuhproduct":
-          // TODO: Make it so only mycuh role can use this command
           if (interaction.member.roles.cache.has(process.env.MYCUH_ROLE_ID)) {
             let productName = interaction.options.get(
               "remove-product-name"
@@ -174,8 +167,6 @@ client.on("interactionCreate", async (interaction) => {
                 ephemeral: true,
               });
             }
-
-            break;
           } else {
             interaction.reply({
               content: "Only mycuhhhh can use this command",
@@ -254,16 +245,11 @@ client.on("interactionCreate", async (interaction) => {
             interaction,
             null,
             { requestAmount: requestAmount, requestReason: requestReason },
-            true
+            "request"
           );
           interaction.reply({
             content: "✅ Request created, expires in 5 mins",
           });
-          break;
-
-        // Redeem mycuh bucks
-        case "redeem":
-          interaction.reply({ content: "coming soon", ephemeral: false });
           break;
 
         // Transfer mycuh bucks from one user to another
@@ -356,17 +342,23 @@ client.on("interactionCreate", async (interaction) => {
             embeds: [transferEmbed],
             components: [transferActionRow],
           });
-          newRequest(transferTransactionMessage, interaction, member, {
-            requestAmount: transferAmount,
-            requestReason: transferReason,
-          });
+          newRequest(
+            transferTransactionMessage,
+            interaction,
+            member,
+            {
+              requestAmount: transferAmount,
+              requestReason: transferReason,
+            },
+            "transfer"
+          );
           interaction.reply({
             content: "✅ Transfer request created, expires in 5 mins",
           });
           break;
       }
     } catch (err) {
-      console.log(`Error Occured: ${err}`);
+      console.log(`Error Occured: ${err} index.js`);
     }
   } else if (interaction.isButton()) {
     await handleButtonResponse(interaction);

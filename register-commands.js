@@ -7,20 +7,8 @@ const commands = [
     description: "Shows mycuh bank balance",
   },
   {
-    name: "redeem",
-    description: "Ask mycuh to use mycuh buck(s)",
-    options: [
-      {
-        name: "ability",
-        description: "Ability to redeem",
-        type: ApplicationCommandOptionType.String,
-        required: true,
-      },
-    ],
-  },
-  {
     name: "addmycuhproduct",
-    description: "Create/Update a product in the mycuh prices channel",
+    description: "Create a product in the mycuh prices channel",
   },
   {
     name: "removemycuhproduct",
