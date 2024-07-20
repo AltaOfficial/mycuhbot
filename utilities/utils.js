@@ -50,7 +50,7 @@ async function newRequest(
   requestDetails,
   requestType
 ) {
-  const EXPIRE_TIME = 300; // 5 minutes
+  const EXPIRE_TIME = 5; // 5 minutes
 
   await new Promise((resolve, reject) => {
     dbConnection.collection("users").updateOne(
@@ -110,10 +110,10 @@ async function newRequest(
 
     if (!noConnectedUser) {
       await new Promise((resolve, reject) => {
-        clearPendingRequest(sendingUser, REQUEST_STATE.OUTGOING);
+        clearPendingRequest(sendingUser.user.id, REQUEST_STATE.OUTGOING);
 
         if (requestType == "transfer") {
-          clearPendingRequest(sendingUser, REQUEST_STATE.INCOMING);
+          clearPendingRequest(sendingUser.user.id, REQUEST_STATE.INCOMING);
         }
         resolve("Success");
       });
@@ -151,6 +151,7 @@ async function newRequest(
           });
           break;
         case "redemption":
+          console.log("expired");
           transferEmbed.setTitle("Redeeming Mycuh Product").setDescription(
             `<@${sendingUser.user.id}> is requesting to redeem **${requestDetails.requestProductName}** 
         Quantity: **${requestDetails.requestQuantity}**\nMycuh Response: **Expired** 🕑`
