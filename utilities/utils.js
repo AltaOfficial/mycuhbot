@@ -50,7 +50,7 @@ async function newRequest(
   requestDetails,
   requestType
 ) {
-  const EXPIRE_TIME = 5; // 5 minutes
+  const EXPIRE_TIME = 300; // 5 minutes
 
   await new Promise((resolve, reject) => {
     dbConnection.collection("users").updateOne(
