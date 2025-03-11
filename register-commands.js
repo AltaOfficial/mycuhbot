@@ -63,6 +63,63 @@ const commands = [
       },
     ],
   },
+
+
+  {
+    name: "start-market",
+    description: "Starts the stock market (admin)",
+  },
+  {
+    name: "file-company",
+    description: "Join the stock market and make investments",
+  },
+  {
+    name: "file-for-bankruptcy",
+    description: "Leave the stock market and lose all assests",
+  },
+
+  {
+    name: "buy-stock",
+    description: "Buy y stock from x company",
+    options: [
+      {
+        name: "company",
+        description: "Company from stock market",
+        type: ApplicationCommandOptionType.User,
+        required: true,
+      },
+      {
+        name: "amount",
+        description: "Amount of stock from company",
+        type: ApplicationCommandOptionType.Number,
+        required: true,
+      },
+  },
+  {
+    name: "sell-stock",
+    description: "Sell y stock from x company",
+    options: [
+      {
+        name: "company",
+        description: "Company from stock market",
+        type: ApplicationCommandOptionType.User,
+        required: true,
+      },
+      {
+        name: "amount",
+        description: "Amount of stock from company",
+        type: ApplicationCommandOptionType.Number,
+        required: true,
+      },
+  },
+
+  /*
+  {
+    name: "random-event",
+    description: "Cause a random event to happen that effects stock prices in a number of companys",
+  },
+  */
+
 ];
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
