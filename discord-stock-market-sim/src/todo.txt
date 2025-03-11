@@ -1,0 +1,11 @@
+edit js stuff 
+    / add admin command to start stock_market
+    / add command to join stock_market via 'add_user id'
+    / add command for users to call 'bankruptcy id'
+    / add command for users to 'buy_stock buy_id sell_id amount'
+    / add command for users to 'sell_stock sell_id buy_id amount'
+
+use 'get_user_info' to place things in db
+
+'random_market_event' not sure when to call this, or when
+
