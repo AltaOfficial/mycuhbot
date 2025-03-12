@@ -5,7 +5,7 @@ use serde_json::to_string_pretty;
 use mongodb::{ bson::*, options::{ ClientOptions, ServerApi, ServerApiVersion }, Client, Collection };
 
 #[tokio::main]
-pub async fn main() -> mongodb::error::Result<()> {
+pub async fn main() -> mongodb::error::Result<Client> {
     dotenv().ok();
     let url = env::var("database_string").unwrap();
     let mut client_options = ClientOptions::parse(url).await?;
@@ -39,6 +39,6 @@ pub async fn main() -> mongodb::error::Result<()> {
         println!("could not find document");
     }
 
-    Ok(())
+    Ok(client)
 }
 

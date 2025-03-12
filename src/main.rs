@@ -1,5 +1,6 @@
 mod stock_market;
 mod server;
+mod cock;
 
 use stock_market::StockMarket;
 
@@ -17,6 +18,7 @@ fn setup(id1: &str, id2: &str, id3: &str, id4: &str) -> StockMarket {
 
 
 fn main() {
+    cock::cock();
     // mongodb server call
     //let server = server::main();
     //println!("{:?}", server.unwrap());
