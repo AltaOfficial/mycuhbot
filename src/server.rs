@@ -2,12 +2,11 @@ use std::env;
 use dotenv::dotenv;
 
 use serde_json::to_string_pretty;
-use mongodb::{ bson::*, options::{ ClientOptions, ServerApi, ServerApiVersion }, Client, Collection };
+use mongodb::{ bson::*, options::{ ClientOptions, ServerApi, ServerApiVersion }, Client, Collection, Database };
 
-#[tokio::main]
-pub async fn main() -> mongodb::error::Result<Client> {
+pub async fn get_database() -> mongodb::error::Result<Database> {
     dotenv().ok();
-    let url = env::var("database_string").unwrap();
+    let url = env::var("DATABASE_URL").unwrap();
     let mut client_options = ClientOptions::parse(url).await?;
 
     // Set the server_api field of the client_options object to Stable API version 1
@@ -25,20 +24,20 @@ pub async fn main() -> mongodb::error::Result<Client> {
 
     let db = client.database("test");
 
-    let collections: Collection<Document> = db.collection("users");
+    // let collections: Collection<Document> = db.collection("users");
 
     //let my_coll = client.database("test").collection::<Document>("users"); // short hand for
     //above
 
     //let result = collections.insert_one(doc! {"name":"Jack", "age":30}, None).await?;
 
-    let filter = doc! {"username": "mr_black_118"};
-    if let Some(document) = collections.find_one(filter).await? {
-        println!("User: {}", to_string_pretty(&document).unwrap());
-    } else {
-        println!("could not find document");
-    }
+    // let filter = doc! {"username": "mr_black_118"};
+    // if let Some(document) = collections.find_one(filter).await? {
+    //     println!("User: {}", to_string_pretty(&document).unwrap());
+    // } else {
+    //     println!("could not find document");
+    // }
 
-    Ok(client)
+    Ok(db)
 }
 
