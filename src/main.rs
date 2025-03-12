@@ -1,6 +1,5 @@
 mod stock_market;
 mod server;
-mod cock;
 
 use stock_market::StockMarket;
 
