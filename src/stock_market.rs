@@ -34,7 +34,7 @@ impl StockMarket {
     pub fn new() -> StockMarket {
         StockMarket {
             users: HashMap::new(),
-            max_stocks: 100,
+            max_stocks: 100, // TODO possbly get from database
         }
     }
 
