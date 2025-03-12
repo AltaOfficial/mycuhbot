@@ -48,16 +48,28 @@ fn main() {
 
 
     println!("-----Random Market Event!-----");
-    // Trigger a random market event (inflation/deflation)
-    market.random_market_event();
+    let mut user3;
+    let mut user4;
+
+    for _ in 1..10 {
+        // Trigger a random market event (inflation/deflation)
+        market.random_market_event();
+
+        user1 = market.get_user_info(id.0);
+        user2 = market.get_user_info(id.1);
+        user3 = market.get_user_info(id.2);
+        user4 = market.get_user_info(id.3);
+        println!("{}\n{}\n{}\n{}\n", user1, user2, user3, user4);
+    }
+
+    // Simulate bankruptcy
+    println!("-----User 2 Filed Bankruptcy!-----");
+    market.bankruptcy(id.1);
 
     user1 = market.get_user_info(id.0);
     user2 = market.get_user_info(id.1);
-    let user3 = market.get_user_info(id.2);
-    let user4 = market.get_user_info(id.3);
+    user3 = market.get_user_info(id.2);
+    user4 = market.get_user_info(id.3);
     println!("{}\n{}\n{}\n{}\n", user1, user2, user3, user4);
-
-    // Simulate bankruptcy
-    //market.bankruptcy(id.1);
 }
 
