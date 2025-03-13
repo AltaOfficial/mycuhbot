@@ -455,18 +455,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "discord-stock-market-sim"
-version = "0.1.0"
-dependencies = [
- "dotenv",
- "mongodb",
- "rand 0.9.0",
- "serde_json",
- "serenity",
- "tokio",
-]
-
-[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1364,6 +1352,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.98",
+]
+
+[[package]]
+name = "mycuhbot"
+version = "0.1.0"
+dependencies = [
+ "dotenv",
+ "mongodb",
+ "rand 0.9.0",
+ "serde_json",
+ "serenity",
+ "tokio",
 ]
 
 [[package]]

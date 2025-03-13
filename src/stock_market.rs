@@ -34,8 +34,18 @@ impl StockMarket {
     pub fn new() -> StockMarket {
         StockMarket {
             users: HashMap::new(),
-            max_stocks: 100, // TODO possbly get from database
+            max_stocks: 100, // TODO possibly get from database
         }
+    }
+
+    #[cfg(test)]
+    pub fn get_users(&self) -> &HashMap<String, User> {
+        &self.users
+    }
+
+    #[cfg(test)]
+    pub fn get_max_stocks(&self) -> u32 {
+        self.max_stocks
     }
 
     // Add a user to the market with a defined stock
@@ -124,8 +134,6 @@ impl StockMarket {
             self.users.insert(seller_id.to_string(), seller);
         }
     }
-
-
 
     pub fn random_market_event(&mut self) {
         let mut rng = rand::rng();
@@ -235,6 +243,8 @@ fn adjust_stock_price(company: &mut User, amount: u32, is_buying: bool) /*-> Use
     //company
 }
 
+
+
 fn exp_weighted_change(rate: f32) -> f32 {
     let exp_value = || {
         let mut rng = rand::rng();
@@ -244,5 +254,26 @@ fn exp_weighted_change(rate: f32) -> f32 {
     };
 
     (exp_value() % 50.0) + 1.0
+}
+
+#[cfg(tests)]
+mod tests {
+    use super::*;
+
+    fn test_adjust_stock_price(&self) -> u32 {
+        let market = StockMarket::new(); 
+        let user_name = "1111";
+        market.add(&user_name);
+
+        let amount = 5;
+        let is_buying = false;
+
+        //self.adjust_stock_price(company: &mut User, amount, is_buying);
+    }
+
+    fn exp_weighted_change(&self) -> u32 {
+        self.max_stocks
+    }
+
 }
 

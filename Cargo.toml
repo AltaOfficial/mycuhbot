@@ -1,5 +1,5 @@
 [package]
-name = "discord-stock-market-sim"
+name = "mycuhbot"
 version = "0.1.0"
 edition = "2021"
 
