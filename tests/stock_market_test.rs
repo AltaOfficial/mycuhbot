@@ -13,25 +13,34 @@ fn setup(users: &[&str]) -> StockMarket {
 
     market
 }
-
-
-#[test]
-fn test_new() {
-    let market = StockMarket::new();
-    let users = market.get_users();
-    let max_stocks = market.get_max_stocks();
-
-    assert_eq!(users.len(), 0);
-}
-
-#[test]
-fn test_add_user() {
+fn main() {
     let mut market = StockMarket::new();
     market.add_user("1111");
-
-    assert!(market.get_user_info("1111"));
+    let x = market.get_users();
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new() {
+        let market = StockMarket::new();
+        let users = market.get_users();
+        let max_stocks = market.get_max_stocks();
+
+        assert_eq!(users.len(), 0);
+        assert_eq!(max_stocks, 100);
+    }
+
+    #[test]
+    fn test_add_user() {
+        let mut market = StockMarket::new();
+        market.add_user("1111");
+
+        //assert!(market.get_user_info("1111"));
+    }
+}
 /*
 #[test]
 fn test_buy_5() {

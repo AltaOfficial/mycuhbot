@@ -5,10 +5,10 @@ use rand::Rng;
 
 #[derive(Debug)]
 pub struct User {
-    user_id: String, // may not need, already exist in 'users' hashmap
-    bal: f32,
-    defined_stock_amount_price: (u32, f32), // (amount, price) 
-    company_stock_owned: HashMap<String, u32>, // <ID, amount> Other companies they own stock in
+    pub user_id: String, // may not need, already exist in 'users' hashmap
+    pub bal: f32,
+    pub defined_stock_amount_price: (u32, f32), // (amount, price) 
+    pub company_stock_owned: HashMap<String, u32>, // <ID, amount> Other companies they own stock in
 }
 
 impl fmt::Display for User {
@@ -25,8 +25,8 @@ impl fmt::Display for User {
 
 
 pub struct StockMarket {
-    users: HashMap<String, User>, // Mapping of user_id to User object
-    max_stocks: u32,
+    pub users: HashMap<String, User>, // Mapping of user_id to User object
+    pub max_stocks: u32,
 }
 
 
@@ -217,7 +217,7 @@ impl StockMarket {
 // Adjust stock price based on market dynamics 
 // should change based on how many buys of a share
 // should also change based on number of things bought from user
-fn adjust_stock_price(company: &mut User, amount: u32, is_buying: bool) /*-> User*/ {
+fn adjust_stock_price(company: &mut User, amount: u32, is_buying: bool) {
     let mut price = company.defined_stock_amount_price.1;
 
     //let max_price = 100.0;
@@ -256,23 +256,38 @@ fn exp_weighted_change(rate: f32) -> f32 {
     (exp_value() % 50.0) + 1.0
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn test_adjust_stock_price(&self) -> u32 {
-        let market = StockMarket::new(); 
+    #[test]
+    fn test_adjust_stock_price_5_false() {
+        let mut market = StockMarket::new(); 
         let user_name = "1111";
-        market.add(&user_name);
 
+        market.add_user(&user_name);
+
+        let user = market.users.get_mut(user_name).unwrap();
         let amount = 5;
         let is_buying = false;
 
-        //self.adjust_stock_price(company: &mut User, amount, is_buying);
+        let initial_price = user.defined_stock_amount_price.1;
+
+        adjust_stock_price(user, amount, is_buying);
+
+        let adjusted_price = user.defined_stock_amount_price.1;
+        let expected_change = (1.0_f32 + amount as f32).log10() * 0.01;
+        let expected_price = initial_price - expected_change;
+
+        assert!((adjusted_price - expected_price).abs() < 0.0001, "Expected price to be around {}, got {}", expected_price, adjusted_price);
     }
 
-    fn exp_weighted_change(&self) -> u32 {
-        self.max_stocks
+    #[test]
+    fn test_exp_weighted_change() {
+        let rate = 1.0;
+        let value = exp_weighted_change(rate);
+
+        assert!(value >= 1.0 && value < 51.0);
     }
 
 }

@@ -1,3 +1,3 @@
 pub fn setup() {
-    println("setting up test...");
+    println!("setting up test...");
 }
