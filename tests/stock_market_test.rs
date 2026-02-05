@@ -13,11 +13,6 @@ fn setup(users: &[&str]) -> StockMarket {
 
     market
 }
-fn main() {
-    let mut market = StockMarket::new();
-    market.add_user("1111");
-    let x = market.get_users();
-}
 
 #[cfg(test)]
 mod tests {
@@ -36,27 +31,35 @@ mod tests {
     #[test]
     fn test_add_user() {
         let mut market = StockMarket::new();
+        
         market.add_user("1111");
+        let users = market.get_users();
+        
+        assert_eq!(users.len(), 1);
 
-        //assert!(market.get_user_info("1111"));
+        let user = users.get("1111");
+        assert!(user.is_some());
+    }
+
+    #[test]
+    fn test_buy_5() {
+        let id = ("1111", "2222");
+        let mut market = setup(&[id.0, id.1]);
+
+        let user1 = market.get_users().get("1111").unwrap();
+        let user2 = market.get_users().get("2222").unwrap();
+        let amount = 5;
+
+        let user1_owned_og = user1.company_stock_owned.get(id.1).unwrap();
+        let user2_ = user2.
+        market.buy_stock(id.0, id.1, amount);
+        assert!(user1.defined_stock_amount_price.0, user1 stock go up);
+        assert!(Some(market.get_user_info("2222")));
+
+        market.buy_stock(id.1, id.0, 5);
+
     }
 }
-/*
-#[test]
-fn test_buy_5() {
-    let id = ("1111", "2222");
-    let mut market = setup(&[id.0, id.1]);
-
-    let user1 = market.get_user_info("1111");
-    let user2 = market.get_user_info("2222");
-    market.buy_stock(id.0, id.1, 5);
-    assert_ne!(market.get_user_info("1111"), user1);
-    assert!(Some(market.get_user_info("2222")));
-
-    market.buy_stock(id.1, id.0, 5);
-
-}
-*/
 
 /*
     #[test]

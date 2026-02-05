@@ -38,12 +38,12 @@ impl StockMarket {
         }
     }
 
-    #[cfg(test)]
+    //#[cfg(test)]
     pub fn get_users(&self) -> &HashMap<String, User> {
         &self.users
     }
 
-    #[cfg(test)]
+    //#[cfg(test)]
     pub fn get_max_stocks(&self) -> u32 {
         self.max_stocks
     }

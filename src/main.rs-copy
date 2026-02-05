@@ -1,0 +1,275 @@
+#![allow(deprecated)]
+
+mod commands;
+
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+use std::sync::Arc;
+
+use tracing::{error, info};
+use tracing_subscriber;
+
+use serenity::async_trait;
+use serenity::framework::StandardFramework;
+use serenity::framework::standard::{
+    Configuration,
+    help_commands, 
+    Args, 
+    CommandGroup, 
+    CommandResult, 
+    DispatchError, 
+    HelpOptions, 
+    //StandardFramework
+};
+use serenity::gateway::ShardManager;
+use serenity::http::Http;
+use serenity::model::{
+    channel::Message,
+    event::ResumedEvent,
+    id::UserId,
+    gateway::{GatewayIntents, Ready}
+};
+use serenity::prelude::*;
+//use tokio::sync::Mutex;
+use serenity::all::standard::macros::{help, hook};
+
+use crate::commands::general::GENERAL_GROUP;
+use crate::commands::owner::OWNER_GROUP;
+use crate::commands::birthday::BIRTHDAY_GROUP;
+//use crate::commands::*;
+
+pub struct ShardManagerContainer;
+impl TypeMapKey for ShardManagerContainer {
+    type Value = Arc<ShardManager>;
+}
+
+struct CommandCounter;
+impl TypeMapKey for CommandCounter {
+    type Value = std::collections::HashMap<String, u64>;
+}
+
+struct Handler;
+#[async_trait]
+impl EventHandler for Handler {
+    async fn message(&self, _ctx: Context, msg: Message) {
+        println!("Received message: {}", msg.content);
+    }
+
+    async fn ready(&self, _: Context, ready: Ready) {
+        if let Some(shard) = ready.shard {
+            info!("[{}] is connected on shard {}/{}", ready.user.name, shard.id, shard.total);
+        }
+    }
+
+    async fn resume(&self, _: Context, _: ResumedEvent) {
+        info!("Resumed");
+    }
+}
+
+// The framework provides two built-in help commands for you to use.
+// But you can also make your own customized help command that forwards
+// to the behaviour of either of them.
+#[help]
+// This replaces the information that a user can pass
+// a command-name as argument to gain specific information about it.
+#[individual_command_tip = "Hello!\n
+If you want more information about a specific command, just pass the command as argument, for example:
+\t!help help"]
+// Some arguments require a `{}` in order to replace it with contextual information.
+// In this case our `{}` refers to a command's name.
+#[command_not_found_text = "Could not find: `{}`"]
+// Define the maximum Levenshtein-distance between a searched command-name
+// and commands. If the distance is lower than or equal the set distance,
+// it will be displayed as a suggestion.
+// Setting the distance to 0 will disable suggestions.
+#[max_levenshtein_distance(3)]
+// When you use sub-groups, Serenity will use the `indention_prefix` to indicate
+// how deeply an item is indented.
+// The default value is "-", it will be changed to "+".
+#[indention_prefix = "+"]
+// On another note, you can set up the help-menu-filter-behaviour.
+// Here are all possible settings shown on all possible options.
+// First case is if a user lacks permissions for a command, we can hide the command.
+#[lacking_permissions = "Hide"]
+// If the user is nothing but lacking a certain role, we just display it hence our variant is `Nothing`.
+#[lacking_role = "Nothing"]
+// The last `enum`-variant is `Strike`, which ~~strikes~~ a command.
+#[wrong_channel = "Strike"]
+// Serenity will automatically analyse and generate a hint/tip explaining the possible
+// cases of ~~strikethrough-commands~~, but only if
+// `strikethrough_commands_tip_in_{dm, guild}` aren't specified.
+// If you pass in a value, it will be displayed instead.
+async fn my_help(
+    ctx: &Context,
+    msg: &Message,
+    args: Args,
+    help_options: &'static HelpOptions,
+    groups: &[&'static CommandGroup],
+    owners: HashSet<UserId> 
+
+) -> CommandResult {
+    let _ = help_commands::with_embeds(ctx, msg, args, help_options, groups, owners).await;
+    Ok(())
+}
+
+#[hook]
+async fn before(ctx: &Context, msg: &Message, command_name: &str) -> bool {
+    println!(
+        "Got command '{}' by user '{}'",
+        command_name, msg.author.name
+    );
+
+    // Increment the number of times this command has been run once. If
+    // the command's name does not exist in the counter, add a default
+    // value of 0.
+    let mut data = ctx.data.write().await;
+    let counter = data
+        .get_mut::<CommandCounter>()
+        .expect("Expected CommandCounter in TypeMap.");
+    let entry = counter.entry(command_name.to_string()).or_insert(0);
+    *entry += 1;
+
+    true // if `before` returns false, command processing doesn't happen.
+}
+
+#[hook]
+async fn after(_ctx: &Context, _msg: &Message, command_name: &str, command_result: CommandResult) {
+    match command_result {
+        Ok(()) => println!("Processed command '{}'", command_name),
+        Err(why) => println!("Command '{}' returned error {:?}", command_name, why),
+    }
+}
+
+#[hook]
+async fn unknown_command(ctx: &Context, msg: &Message, unknown_command_name: &str) {
+    println!("Could not find command named '{}'", unknown_command_name);
+    msg.channel_id
+        .say(ctx, "Command not recognised.")
+        .await
+        .unwrap();
+}
+
+#[hook]
+async fn delay_action(ctx: &Context, msg: &Message) {
+    // You may want to handle a Discord rate limit if this fails.
+    let _ = msg.react(ctx, '⏱').await;
+}
+
+#[hook]
+async fn dispatch_error(ctx: &Context, msg: &Message, error: DispatchError, _command_name: &str) {
+    if let DispatchError::Ratelimited(info) = error {
+        if info.is_first_try {
+            let _ = msg
+                .channel_id
+                .say(
+                    &ctx.http,
+                    &format!("Try this again in {} seconds.", info.as_secs()),
+                )
+                .await;
+        }
+    }
+}
+
+
+#[tokio::main]
+async fn main() {
+    dotenvy::dotenv().expect("Failed to load .env file");
+
+    // Initialize the logger, uses environment variable setting.
+    tracing_subscriber::fmt::init();
+
+    setup_db().await;
+
+    let token = std::env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+
+    let http = Http::new(&token);
+
+    // We will fetch your bot's owners and id
+    let (owners, bot_id) = match http.get_current_application_info().await {
+        Ok(info) => {
+            let mut owners = HashSet::new();
+            if let Some(owner) = &info.owner {
+                owners.insert(owner.id);
+            }
+
+            match http.get_current_user().await {
+                Ok(bot_id) => (owners, bot_id.id),
+                Err(why) => panic!("Could not access the bot id: {:?}", why),
+            }
+
+        },
+        Err(why) => panic!("Could not access application info: {:?}", why),
+    };
+
+    // Create the framework
+    let framework = StandardFramework::new()
+        .before(before)
+        .after(after)
+        .unrecognised_command(unknown_command)
+        .on_dispatch_error(dispatch_error)
+        .help(&MY_HELP)
+        .group(&GENERAL_GROUP)
+        .group(&OWNER_GROUP)
+        .group(&BIRTHDAY_GROUP);
+    framework.configure(Configuration::new()
+            .owners(owners)
+            .prefix("!")
+            .delimiters(vec![",", ", "])
+            .on_mention(Some(bot_id))
+            .with_whitespace(true)
+        );
+
+    // this prob should change to something that doesn't control everything
+    let intents = GatewayIntents::all();
+    //let intents = GatewayIntents::GUILD_MESSAGES
+    //    | GatewayIntents::DIRECT_MESSAGES
+    //    | GatewayIntents::MESSAGE_CONTENT;
+
+    let mut client = Client::builder(&token, intents)
+        .framework(framework)
+        .event_handler(Handler)
+        .type_map_insert::<CommandCounter>(HashMap::default())
+        .await
+        .expect("Err creating client");
+
+    {
+        let mut data = client.data.write().await;
+        let shard_manager = client.shard_manager.clone();
+        data.insert::<ShardManagerContainer>(shard_manager);
+    }
+
+    let shard_manager = client.shard_manager.clone();
+
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
+        shard_manager.shutdown_all().await;
+    });
+
+    if let Err(why) = client.start().await {
+        error!("Client error: {:?}", why);
+    }
+}
+
+async fn setup_db() {
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    let opt = sqlx::sqlite::SqliteConnectOptions::from_str(&database_url)
+        .expect("Invalid DATABASE_URL")
+        .create_if_missing(true);
+
+    let db = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(opt)
+        .await
+        .expect("Couldn't connect to database.");
+
+    sqlx::migrate!("./migrations")
+        .run(&db)
+        .await
+        .expect("Couldn't migrate database.");
+
+    // maybe return database, not sure if I want to yet
+    // db
+}
+
