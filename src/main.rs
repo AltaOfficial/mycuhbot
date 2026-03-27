@@ -6,12 +6,15 @@ use serenity::GatewayIntents;
 
 use std::collections::HashMap;
 use tokio::sync::Mutex;
+use once_cell::sync::OnceCell;
 
 mod commands;
 
 
+static DB_POOL: OnceCell<sqlx::SqlitePool> = OnceCell::new();
+
 #[derive(Debug)]
-struct Data {
+pub struct Data {
     command_counter: Mutex<HashMap<String, u64>>,
 }
 
@@ -25,10 +28,9 @@ async fn main() {
 
     // Initialize the logger, uses environment variable setting.
     tracing_subscriber::fmt::init();
-
     let token = std::env::var("DISCORD_TOKEN").expect("Missing DISCORD_TOKEN");
 
-    setup_db().await;
+    init_db().await;
     
     // start stock market
 
@@ -101,29 +103,14 @@ async fn main() {
 }
 
 
-/*
-#[tokio::main]
-async fn main() {
-    // We will fetch your bot's owners and id
-    let (owners, bot_id) = match http.get_current_application_info().await {
-        Ok(info) => {
-            let mut owners = HashSet::new();
-            if let Some(owner) = &info.owner {
-                owners.insert(owner.id);
-            }
 
-            match http.get_current_user().await {
-                Ok(bot_id) => (owners, bot_id.id),
-                Err(why) => panic!("Could not access the bot id: {:?}", why),
-            }
 
-        },
-        Err(why) => panic!("Could not access application info: {:?}", why),
-    };
-}
-*/
 
-async fn setup_db() -> sqlx::SqlitePool {
+
+
+
+
+async fn init_db() {
     use std::str::FromStr;
 
     let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -138,11 +125,46 @@ async fn setup_db() -> sqlx::SqlitePool {
         .expect("Couldn't connect to database");
 
     sqlx::migrate!("./migrations")
-        //.run(&db)
         .run(&pool)
         .await
         .expect("Couldn't migrate database.");
 
-    pool
+    DB_POOL.set(pool).expect("Database already initialized.");
+}
+
+pub fn get_pool() -> &'static sqlx::SqlitePool {
+    DB_POOL.get().expect("Database not initialized.")
+}
+
+pub async fn update_db_new_user(ctx: poise::Context<'_, Data, Error>) -> Result<(String, i64, i64), Error> {
+    let discord_id: i64 = ctx.author().id.get() as i64;
+    let username = ctx.author().name.clone();
+    let default_bucks = 0;
+
+    let pool = get_pool();
+
+    sqlx::query!(r#"
+        INSERT INTO accounts (username, discord_id, bucks)
+        VALUES (?, ?, ?)
+        "#, username, discord_id, default_bucks)
+        .execute(pool)
+        .await?;
+
+    println!("Inserted new user {} with discord_id {} into the database.", username, discord_id);
+
+    let record = sqlx::query!(r#"
+        SELECT username, discord_id, bucks
+        FROM accounts
+        WHERE discord_id = ?
+    "#, discord_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| (
+            r.username, 
+            r.discord_id.expect("wtf does the primary key return a option???"), 
+            r.bucks) 
+        ).expect("Insert failed somewhere, shouldn't have but did, closing program!")  
+    )
 }
 

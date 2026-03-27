@@ -3,12 +3,13 @@ use poise::serenity_prelude::Mentionable;
 
 #[allow(unused_imports)]
 use crate::{Data, Error, Context};
+use crate::{get_pool, update_db_new_user};
 
 const GRAY_HIGHLIGHT: i32 = 0x747F8D;
 const GREEN_HIGHLIGHT: i32 = 0x57F287;
 const RED_HIGHLIGHT: i32 = 0xED4245;
 //const EXPIRE_TIME: std::time::Duration = std::time::Duration::from_secs(300);
-const EXPIRE_TIME: std::time::Duration = std::time::Duration::from_secs(5);
+const EXPIRE_TIME: std::time::Duration = std::time::Duration::from_secs(15);
 
 pub fn commands() -> Vec<poise::Command<Data, Error>> {
     vec![
@@ -22,26 +23,83 @@ pub fn commands() -> Vec<poise::Command<Data, Error>> {
 }
 
 
+// not sure if I'll use this function because I still need to make queries to get information but
+// also need to check if user exist
+#[allow(unused)]
+async fn is_user_in(db: &sqlx::SqlitePool, discord_id: i64) -> bool {
+    sqlx::query!("SELECT * FROM accounts WHERE discord_id = ?", discord_id)
+        .fetch_one(db)
+        .await
+        .is_ok()
+}
+
+
+async fn send_hidden_msg(ctx: Context<'_>, msg: String) -> Result<poise::ReplyHandle<'_>, Error> {
+    let reply = ctx.send(poise::CreateReply::default()
+        .content(msg)
+        .ephemeral(true)
+    )
+    .await?;
+
+    Ok(reply)
+}
+
+
+
+// TODO, this function is a bit ugly might want to be cleaned up
 /// Show bank balance
 #[poise::command(prefix_command, slash_command)]
 pub async fn balance(ctx: Context<'_>) -> Result<(), Error> {
-    //let requester = ctx.author();
+    let requester: i64 = ctx.author().id.get() as i64;
+    let pool = get_pool();
 
-    // sql query
+    let record = sqlx::query!("SELECT bucks FROM accounts WHERE discord_id = ?", requester)
+        .fetch_optional(pool)
+        .await?;
 
-    let bal = 100;
-    
-    ctx.send(poise::CreateReply::default()
-        .content(format!("You have **{}** Mycuh bucks", bal))
-        .ephemeral(true)
-    ).await?;
+    //let record = is_user_in(pool, requester).await;
+
+    // helper function that abstracts message being sent if user does or doesn't exist
+    async fn send_balance_message(ctx: poise::Context<'_, Data, Error>, bal: i64, requester: i64) -> Result<(), Error> {
+        println!("queryied bal from {} with balance value {}.", requester, bal);
+        
+        ctx.send(poise::CreateReply::default()
+            .content(format!("You have **{}** Mycuh bucks", bal))
+            .ephemeral(true)
+        ).await?;
+
+        Ok(())
+    }
+
+    /*
+    if record {
+        send_balance_message(ctx, record.bucks, requester).await?;
+    } else {
+        let record = update_db_new_user(ctx).await?;
+
+        send_balance_message(ctx, record.2, requester).await?;
+    };
+    */
+
+    match record {
+        Some(record) => {
+            send_balance_message(ctx, record.bucks, requester).await?;
+        },
+
+        None => {
+            let record = update_db_new_user(ctx).await?;
+
+            // I made the return type a tuple and its just so ugly
+            send_balance_message(ctx, record.2, requester).await?;
+        }
+    };
 
     Ok(())
 }
 
 
+// this function is very large and has many duplicated parts of code, could be and prob should be cleaned up
 /// Ask another member to transfer mycuh buck(s)
-//#[allow(dead_code, unused_variables)]
 #[poise::command(prefix_command, slash_command)]
 pub async fn transfer(
     ctx: Context<'_>,
@@ -52,13 +110,87 @@ pub async fn transfer(
     #[description = "Reason for transfer"]
     request_reason: String,
 
-    #[description = "Member to transfer to/from "]
-    user: serenity::User, // change to reponse from emoji from user
+    #[description = "Member to transfer to/from"]
+    recpient_user: serenity::User, 
 ) -> Result<(), Error> {
-    let requester = ctx.author();
+    let requester_user = ctx.author();
     let base_id = ctx.id().to_string();
 
-    let reply = {
+    let pool = get_pool();
+
+    // check if the user being requested is the same user
+    /*
+    if &recpient_user == requester_user {
+        send_hidden_msg(ctx, "Cannot transfer Mycuh Bucks to yourself.".to_string()).await?;
+        println!("User {} tried to transfer bucks to themselves", requester_user);
+
+        return Ok(());
+    }
+    */
+
+    let sender_id = requester_user.id.get() as i64;
+    let recpient_id = recpient_user.id.get() as i64;
+
+    /*
+    let requested_user_bucks = sqlx::query!("
+        SELECT bucks 
+        FROM accounts 
+        WHERE discord_id = ?", 
+        recpient_id
+    )
+    .fetch_optional(pool)
+    .await?;
+    */
+
+    // sender is assumed to be in database... might want to check to see if they acually exist TODO
+    let bal = sqlx::query!(
+        r#"
+            SELECT a1.bucks AS sender_bal, a2.bucks AS recipient_bal
+            FROM accounts as a1
+            LEFT JOIN accounts as a2 ON a2.discord_id = ?
+            WHERE a1.discord_id = ?;
+        "#,
+        recpient_id,
+        sender_id
+    )
+    .fetch_one(pool)
+    .await?; 
+    println!("Sender: {} has bal: {},\nRecpient: {} has bal: {}", requester_user.tag(), bal.sender_bal, recpient_user.tag(), bal.recipient_bal);
+
+    // check if user has requested user even has enough bucks 
+    /*
+    match requested_user_bucks {
+        Some(request_user_bucks) => {
+            if request_user_bucks.bucks >= request_amount as i64 {
+                send_hidden_msg(ctx, format!("Sent transfer request to {} time till expire {}.", recpient_user.mention(), EXPIRE_TIME.as_secs()) ).await?;
+
+            } else {
+                //send_hidden_msg(ctx, format!("User {} only has {} bucks.", recpient_user.mention(), bal.recipient_bal)).await?;
+                println!("User {} does not have enough Mycuh bucks to give.", requester_user);
+
+                //return Ok(());
+            }
+        },
+        None => {
+            send_hidden_msg(ctx, "User does not exist in database.".to_string()).await?;
+            return Ok(());
+        }
+    }
+    */
+
+    // this assumes that the user exist in the database
+    if bal.recipient_bal < request_amount as i64 {
+        send_hidden_msg(ctx, format!("User {} only has {} bucks.", recpient_user.mention(), bal.recipient_bal)).await?;
+        println!("User {} does not have enough Mycuh bucks to give.", requester_user.tag());
+
+        return Ok(());
+    }
+    send_hidden_msg(ctx, format!("Sent transfer request to {} time till expire {}.", recpient_user.mention(), EXPIRE_TIME.as_secs()) ).await?;
+
+    
+
+
+    let components = {
         let btn_yes = serenity::CreateButton::new(format!("{base_id}:yes"))
             .style(serenity::ButtonStyle::Secondary)
             .label("Yes")
@@ -69,44 +201,60 @@ pub async fn transfer(
             .label("No")
             .emoji('❌');
 
-        let components = vec![serenity::CreateActionRow::Buttons(vec![
-            btn_yes,
-            btn_no,
-        ])];
-
-        poise::CreateReply::default()
-            .embed(
-                serenity::CreateEmbed::default()
-                    .title("Mycuh Bucks Transfer Request")
-                    .color(GRAY_HIGHLIGHT)
-                    .description(format!(
-                        "{} is requesting to add **{}** mycuh buck(s) from {} to their myccount\n\
-                        Reason: **{}**\n\
-                        User Response: **{}** ⏳",
-
-                        requester.mention(),
-                        request_amount,
-                        user.mention(),
-                        request_reason,
-                        EXPIRE_TIME.as_secs(),
-                    ))
-            )
-            .components(components)
+        vec![serenity::CreateActionRow::Buttons(vec![btn_yes, btn_no,] )]
     };
 
-    let reply_handle = ctx.send(reply).await?;
-    let message = reply_handle.message().await?;
 
+
+
+
+    let embed = serenity::CreateEmbed::default()
+        .title("Mycuh Bucks Transfer Request")
+        .color(GRAY_HIGHLIGHT)
+        .description(format!(
+            "{} is requesting to add **{}** mycuh buck(s) from {} to their myccount\n\
+            Reason: **{}**\n\
+            User Response: **{} secs** ⏳",
+
+            requester_user.mention(),
+            request_amount,
+            recpient_user.mention(),
+            request_reason,
+            EXPIRE_TIME.as_secs(),
+        ));
+
+
+    // recpient dm hook to send/edit messages
+    let dm = match recpient_user.create_dm_channel(ctx.serenity_context()).await {
+        Ok(dm) => dm,
+        Err(_) => {
+            ctx.send(
+                poise::CreateReply::default()
+                    .content("That user has DMs disabled.")
+                    .ephemeral(true),
+            )
+            .await?;
+            return Ok(());
+        }
+    };
+
+
+    //let reply_handle = ctx.send(reply).await?;
+    let message_handle = dm.send_message(
+        ctx.serenity_context(), 
+        serenity::CreateMessage::new()
+            .embed(embed)
+            .components(components.clone())
+    ).await?;
+
+    // recpient emoji selection data [yes/no/timeout] 
     let interaction = serenity::ComponentInteractionCollector::new(ctx.serenity_context())
-        //.message_id(reply.message().await?.id) // only this message
-        //.message_id(reply.id)                  // only this message
-        .author_id(user.id)                      // ONLY the requested user
+        .author_id(recpient_user.id)
         .timeout(EXPIRE_TIME)
-        .filter(move |mci| {                     // not sure what mci stands for but filterout the correct id from discord
-            mci.data.custom_id == format!("{base_id}:yes")
-                || mci.data.custom_id == format!("{base_id}:no")
-        })
-        .await;
+        .filter(move |mci| {
+            mci.data.custom_id == format!("{base_id}:yes") || mci.data.custom_id == format!("{base_id}:no")
+        }
+    ).await;
 
     match interaction {
         Some(mci) => {
@@ -118,15 +266,15 @@ pub async fn transfer(
                     // TODO: sql query
                     accepted = true;
                     status = "Accepted ✅";
-                    println!("Accepted ✅");
+                    println!("User {} Accepted ✅", recpient_user.tag());
                 }
 
                 id if id.ends_with(":no") => {
                     status = "Denied ❌";
-                    println!("Denied ❌");
+                    println!("User {} Denied ❌", recpient_user.tag());
                 }
 
-                _ => unreachable!("filtered custom_id should prevent this"),
+                _ => unreachable!(),
             }
 
             let mut msg = mci.message.clone();
@@ -142,21 +290,21 @@ pub async fn transfer(
                             "{} requested **{}** buck(s) from {}\n\
                             Reason: **{}**\n\
                             User Response: **{}**",
-                            requester.mention(),
+                            requester_user.mention(),
                             request_amount,
-                            user.mention(),
+                            recpient_user.mention(),
                             request_reason,
                             status
                         ))
                 ])
-                .components(vec![]),
+                .components(vec![])
             )
             .await?;
         },
 
         _ => {
             // timeout
-            let mut msg = message.into_owned();
+            let mut msg = message_handle.to_owned();
 
             msg.edit(
                 ctx, 
@@ -169,16 +317,15 @@ pub async fn transfer(
                             "{} requested **{}** buck(s) from {}\n\
                             Reason: **{}**\n\
                             User Response: **Expired ⏱**",
-                            requester.mention(),
+                            requester_user.mention(),
                             request_amount,
-                            user.mention(),
+                            recpient_user.mention(),
                             request_reason,
                         ))
                 ])
                 .components(vec![]),
             )
             .await?;
-
         }
     }
 
@@ -189,7 +336,7 @@ pub async fn transfer(
 /// Request amount of mycuh bucks from the mycuh bank
 #[allow(dead_code, unused_variables)]
 #[poise::command(prefix_command, slash_command)]
-pub async fn request(
+pub async fn request_loan(
     ctx: Context<'_>,
 
     #[description = "Amount of bucks to request"]
@@ -206,6 +353,13 @@ pub async fn request(
     
     Ok(())
 }
+
+
+
+
+
+
+
 
 
 // --- personal listings commands ---
