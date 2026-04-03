@@ -136,35 +136,27 @@ pub fn get_pool() -> &'static sqlx::SqlitePool {
     DB_POOL.get().expect("Database not initialized.")
 }
 
-pub async fn update_db_new_user(ctx: poise::Context<'_, Data, Error>) -> Result<(String, i64, i64), Error> {
-    let discord_id: i64 = ctx.author().id.get() as i64;
-    let username = ctx.author().name.clone();
+pub async fn init_user_account(ctx: poise::Context<'_, Data, Error>) -> Result<(String, Option<i64>, i64), Error> {
+    let user = ctx.author();
+    let discord_id = user.id.get() as i64;
+    let username = user.name.clone();
+
     let default_bucks = 0;
 
     let pool = get_pool();
 
-    sqlx::query!(r#"
-        INSERT INTO accounts (username, discord_id, bucks)
-        VALUES (?, ?, ?)
-        "#, username, discord_id, default_bucks)
-        .execute(pool)
-        .await?;
-
-    println!("Inserted new user {} with discord_id {} into the database.", username, discord_id);
-
-    let record = sqlx::query!(r#"
-        SELECT username, discord_id, bucks
-        FROM accounts
-        WHERE discord_id = ?
-    "#, discord_id)
-    .fetch_optional(pool)
+    let record = sqlx::query!(
+        r#"
+            INSERT INTO accounts (username, discord_id, bucks)
+            VALUES (?, ?, ?) 
+            RETURNING username, discord_id, bucks
+        "#, 
+        username, 
+        discord_id, 
+        default_bucks
+    )
+    .fetch_one(pool)
     .await?;
 
-    Ok(record.map(|r| (
-            r.username, 
-            r.discord_id.expect("wtf does the primary key return a option???"), 
-            r.bucks) 
-        ).expect("Insert failed somewhere, shouldn't have but did, closing program!")  
-    )
+    Ok( (record.username, record.discord_id, record.bucks) )
 }
-
