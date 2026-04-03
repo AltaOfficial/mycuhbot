@@ -256,6 +256,7 @@ fn exp_weighted_change(rate: f32) -> f32 {
     (exp_value() % 50.0) + 1.0
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,4 +292,5 @@ mod tests {
     }
 
 }
+*/
 

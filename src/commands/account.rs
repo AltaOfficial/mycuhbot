@@ -3,13 +3,14 @@ use poise::serenity_prelude::Mentionable;
 
 #[allow(unused_imports)]
 use crate::{Data, Error, Context};
-use crate::{get_pool, init_user_account};
+use crate::db::*;
+use crate::utils::*;
 
 const GRAY_HIGHLIGHT: i32 = 0x747F8D;
 const GREEN_HIGHLIGHT: i32 = 0x57F287;
 const RED_HIGHLIGHT: i32 = 0xED4245;
 //const EXPIRE_TIME: std::time::Duration = std::time::Duration::from_secs(300);
-const EXPIRE_TIME: std::time::Duration = std::time::Duration::from_secs(15);
+pub const EXPIRE_TIME: std::time::Duration = std::time::Duration::from_secs(15);
 
 pub fn commands() -> Vec<poise::Command<Data, Error>> {
     vec![
@@ -22,113 +23,6 @@ pub fn commands() -> Vec<poise::Command<Data, Error>> {
         view_listing(),
     ]
 }
-
-
-
-/// Sends a hidden message 'msg' to the user from 'ctx' 
-async fn send_hidden_msg<'a>(ctx: Context<'a>, msg: &str) -> Result<poise::ReplyHandle<'a>, Error> {
-    let reply = ctx.send(poise::CreateReply::default()
-        .content(msg)
-        .ephemeral(true)
-    )
-    .await?;
-
-    Ok(reply)
-}
-
-
-/// user button choice component help function
-fn emoji_buttons_components(base_id: &String) -> Vec<serenity::CreateActionRow> {
-    let btn_yes = serenity::CreateButton::new(format!("{base_id}:yes"))
-        .style(serenity::ButtonStyle::Secondary)
-        .label("Yes")
-        .emoji('✅');
-
-    let btn_no = serenity::CreateButton::new(format!("{base_id}:no"))
-        .style(serenity::ButtonStyle::Secondary)
-        .label("No")
-        .emoji('❌');
-
-    vec![serenity::CreateActionRow::Buttons(vec![btn_yes, btn_no,] )]
-}
-
-    
-#[derive(PartialEq)]
-pub enum ConfirmResult {
-    Yes,
-    No,
-    Timeout,
-}
-
-pub async fn user_choice_from_msg (
-    ctx: Context<'_>,
-    author_id: serenity::UserId,
-    base_id: String,
-    timeout: std::time::Duration,
-) -> ConfirmResult {
-    // recpient selection data [yes/no/timeout] 
-    let interaction = serenity::ComponentInteractionCollector::new(ctx.serenity_context())
-        .author_id(author_id)
-        .timeout(timeout)
-        .filter(move |mci| {
-            mci.data.custom_id == format!("{base_id}:yes") 
-                || mci.data.custom_id == format!("{base_id}:no")
-        }
-    ).await;
-
-    match interaction {
-        Some(mci) => {
-            if mci.data.custom_id.ends_with(":yes") {
-                ConfirmResult::Yes
-            } else if mci.data.custom_id.ends_with(":no") {
-                ConfirmResult::No
-            } else {
-                panic!("interaction result wasn't [yes/no/timeout]");
-            } 
-
-        },
-
-        None => ConfirmResult::Timeout,
-    }
-}
-
-pub async fn send_option_message(
-    ctx: Context<'_>,
-    channel: &serenity::ChannelId,
-    embed: serenity::CreateEmbed,
-    base_id: &String,
-) -> Result<serenity::Message, serenity::Error> {
-    channel
-        .send_message(
-            ctx,
-            serenity::CreateMessage::new()
-                .embed(embed)
-                .components(emoji_buttons_components(&base_id))
-        )
-        .await
-}
-
-pub async fn ask_user_join_db(ctx: Context<'_>) -> Result<ConfirmResult, Error> {
-    let _msg = send_hidden_msg(ctx, "do you want to join the market?" );
-
-    let option = user_choice_from_msg(ctx, ctx.author().id, ctx.id().to_string(), EXPIRE_TIME);
-
-    match option.await {
-        ConfirmResult::Yes => { 
-            init_user_account(ctx).await?;
-            return Ok(ConfirmResult::Yes);
-        }
-        _ => {}
-    };
-
-    Ok(ConfirmResult::No)
-}
-
-
-
-
-
-
 
 
 // --- Start of discord commands -----------------------------------------------
@@ -451,6 +345,141 @@ pub async fn transfer_send(
     let mut msg = send_option_message(ctx, &dm.id, embed.clone(), &base_id).await?;
 
 
+    // this function is repeat serveral times with just some string changes, could be fixed later
+    /// edits user choice message
+    fn edit_embed(
+        sending_user: &serenity::User, 
+        request_amount: u32, 
+        taking_user: serenity::User, 
+        request_reason: String, 
+        color: i32, 
+        status: &str
+    ) -> serenity::EditMessage {
+
+        serenity::EditMessage::new()
+        .embeds(vec![
+            serenity::CreateEmbed::new()
+                .title("Bucks Transfer Request")
+                .color(color)
+                .description(format!(
+                    "{} sent **{}** buck(s) to {}\n\
+                    Reason: **{}**\n\
+                    User Response: **{}**",
+                    sending_user.mention(),
+                    request_amount,
+                    taking_user.mention(),
+                    request_reason,
+                    status)
+                )
+        ])
+        .components(vec![])
+    }
+
+    let result = user_choice_from_msg (ctx, sending_user.id, base_id.clone(), EXPIRE_TIME).await;
+
+    // checks users choice and handles it
+    match result {
+        ConfirmResult::Yes => {
+            println!("User {} Accepted  ", taking_user.tag());
+
+            let loss = bal.sending_bal - request_amount as i64;
+            let gain = bal.taking_bal + request_amount as i64;
+            sqlx::query!(
+                r#"
+                    UPDATE accounts 
+                    SET bucks = CASE discord_id 
+                        WHEN ? THEN ?
+                        WHEN ? THEN ? 
+                    END;
+                "#,
+                sending_id, loss,
+                taking_id, gain
+            )
+            .execute(pool)
+            .await?;
+
+            send_hidden_msg(ctx, &format!("Request from {} succeded with amount {}.", taking_user.mention(), request_amount) ).await?;
+
+            msg.edit(
+                ctx,
+                edit_embed(taking_user, request_amount, sending_user, request_reason, GREEN_HIGHLIGHT, "Accepted  ")
+            ).await?;
+        }
+
+        ConfirmResult::No => {
+            println!("User {} Denied ❌", taking_user.tag());
+
+            send_hidden_msg(ctx, &format!("Request from {} declined.", taking_user.mention()) ).await?;
+
+            msg.edit(
+                ctx,
+                edit_embed(taking_user, request_amount, sending_user, request_reason, RED_HIGHLIGHT, "Denied ❌")
+            ).await?;
+        }
+
+        ConfirmResult::Timeout => {
+            println!("User {} Timeout ⏱ ", taking_user.tag());
+
+            send_hidden_msg(ctx, &format!("Request from {} timed-out.", taking_user.mention()) ).await?;
+
+            msg.edit(
+                ctx,
+                edit_embed(taking_user, request_amount, sending_user, request_reason, GRAY_HIGHLIGHT, "Expired ⏱ ")
+            ).await?;
+        }
+    }
+
+    Ok(())
+}
+
+
+
+/*
+/// Request amount of mycuh bucks from the mycuh bank
+#[allow(dead_code, unused_variables)]
+#[poise::command(prefix_command, slash_command)]
+pub async fn request_loan(
+    ctx: Context<'_>,
+
+    #[description = "Amount of bucks to request"]
+    request_amount: i32,
+
+    #[description = "Reason for the request"]
+    request_reason: String,
+
+    #[description = "User you are requesting bucks from"]
+    user: serenity::User, // change to reponse from emoji from user
+) -> Result<(), Error> {
+    let discord_id = user.id.get() as i64;
+    
+    let pool = get_pool(); 
+
+
+    let embed = serenity::CreateEmbed::default()
+        .title("Mycuh Bucks Transfer Request")
+        .color(GRAY_HIGHLIGHT)
+        .description(format!(
+            "{} is requesting **{}** mycuh buck(s)\n\
+            Reason: **{}**\n\
+            User Response: **{} secs** ⏳",
+
+            user.id.mention(),
+            request_amount,
+            request_reason,
+            EXPIRE_TIME.as_secs(),
+        ));
+
+    // recpient dm hook to send/edit messages
+    let dm = match ctx..create_dm_channel(ctx.serenity_context()).await {
+        Ok(dm) => dm,
+        Err(_) => {
+            send_hidden_msg(ctx, "That user has DMs disabled.").await?;
+            return Ok(());
+        }
+    };
+
+    let mut msg = send_option_message(ctx, &dm.id, embed.clone(), &base_id).await?;
+
     /// edits user choice message
     fn edit_embed(
         sending_user: &serenity::User, 
@@ -534,35 +563,10 @@ pub async fn transfer_send(
         }
     }
 
-    Ok(())
-}
-
-
-
-
-
-
-/// Request amount of mycuh bucks from the mycuh bank
-#[allow(dead_code, unused_variables)]
-#[poise::command(prefix_command, slash_command)]
-pub async fn request_loan(
-    ctx: Context<'_>,
-
-    #[description = "Amount of bucks to request"]
-    request_amount: i32,
-
-    #[description = "Reason for the request"]
-    request_reason: String,
-
-    #[description = "User you are requesting bucks from"]
-    user: serenity::User, // change to reponse from emoji from user
-) -> Result<(), Error> {
-    // sql query
-    
     
     Ok(())
 }
-
+*/
 
 
 
@@ -614,7 +618,6 @@ pub async fn add_product_to_listing(
 
 
 /// Remove product from listing
-#[allow(dead_code, unused_variables)]
 #[poise::command(prefix_command, slash_command)]
 pub async fn remove_product_in_listing(
     ctx: Context<'_>,
@@ -646,7 +649,7 @@ pub async fn remove_product_in_listing(
     )
     .fetch_optional(pool)
     .await?;
-    
+
     match deleted {
         Some(deleted) => { 
             let product_description = match deleted.product_description {

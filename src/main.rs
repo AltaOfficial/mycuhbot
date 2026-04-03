@@ -6,12 +6,10 @@ use serenity::GatewayIntents;
 
 use std::collections::HashMap;
 use tokio::sync::Mutex;
-use once_cell::sync::OnceCell;
 
 mod commands;
-
-
-static DB_POOL: OnceCell<sqlx::SqlitePool> = OnceCell::new();
+mod db;
+mod utils;
 
 #[derive(Debug)]
 pub struct Data {
@@ -30,7 +28,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let token = std::env::var("DISCORD_TOKEN").expect("Missing DISCORD_TOKEN");
 
-    init_db().await;
+    db::init_db().await;
     
     // start stock market
 
@@ -102,61 +100,3 @@ async fn main() {
     }
 }
 
-
-
-
-
-
-
-
-
-async fn init_db() {
-    use std::str::FromStr;
-
-    let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-
-    let opts = sqlx::sqlite::SqliteConnectOptions::from_str(&db_url)
-        .expect("Invalid DATABASE_URL")
-        .create_if_missing(true)
-        .foreign_keys(true);
-
-    let pool = sqlx::SqlitePool::connect_with(opts)
-        .await
-        .expect("Couldn't connect to database");
-
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Couldn't migrate database.");
-
-    DB_POOL.set(pool).expect("Database already initialized.");
-}
-
-pub fn get_pool() -> &'static sqlx::SqlitePool {
-    DB_POOL.get().expect("Database not initialized.")
-}
-
-pub async fn init_user_account(ctx: poise::Context<'_, Data, Error>) -> Result<(String, Option<i64>, i64), Error> {
-    let user = ctx.author();
-    let discord_id = user.id.get() as i64;
-    let username = user.name.clone();
-
-    let default_bucks = 0;
-
-    let pool = get_pool();
-
-    let record = sqlx::query!(
-        r#"
-            INSERT INTO accounts (username, discord_id, bucks)
-            VALUES (?, ?, ?) 
-            RETURNING username, discord_id, bucks
-        "#, 
-        username, 
-        discord_id, 
-        default_bucks
-    )
-    .fetch_one(pool)
-    .await?;
-
-    Ok( (record.username, record.discord_id, record.bucks) )
-}

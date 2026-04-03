@@ -1,11 +1,10 @@
 use crate::{Data, Error, Context};
 
-//use crate::ShardManagerContainer;
-
 
 pub fn commands() -> Vec<poise::Command<Data, Error>> {
     vec![
         quit(),
+        //save_db(),
     ]
 }
 
@@ -19,11 +18,12 @@ pub async fn quit(ctx: Context<'_>) -> Result<(), Error> {
     if ctx.author().id != owner_id {
         ctx.send(
             poise::CreateReply::default()
-                .content("You are not the owner, reporting incident")
+                .content("You are not the owner, reporting incident.")
                 .ephemeral(true)
         ).await?;
 
         // dm, log, do something
+        println!("ALERT USER {} TRIED TO SHUT OFF BOT", ctx.author().tag());
         return Ok(());
     }
 
@@ -35,3 +35,13 @@ pub async fn quit(ctx: Context<'_>) -> Result<(), Error> {
 
     Ok(())
 }
+
+
+/// Save SQL Database
+#[allow(unused)]
+#[poise::command(prefix_command, slash_command)]
+pub async fn save_db(ctx: Context<'_>) -> Result<(), Error> {
+    todo!("should call sql statement to save db");
+    Ok(())
+}
+
