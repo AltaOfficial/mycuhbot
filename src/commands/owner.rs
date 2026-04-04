@@ -1,5 +1,6 @@
 use crate::{Data, Error, Context};
-
+use crate::utils::send_msg;
+use crate::utils::USER_OWNER;
 
 pub fn commands() -> Vec<poise::Command<Data, Error>> {
     vec![
@@ -8,22 +9,14 @@ pub fn commands() -> Vec<poise::Command<Data, Error>> {
     ]
 }
 
-
 /// Stop The Bot
 #[poise::command(prefix_command, slash_command)]
 pub async fn quit(ctx: Context<'_>) -> Result<(), Error> {
-    todo!("need to impl quit command");
-    let owner_id = 1231232; // should not be hardcoded but not sure what to do :/
-
-    if ctx.author().id != owner_id {
-        ctx.send(
-            poise::CreateReply::default()
-                .content("You are not the owner, reporting incident.")
-                .ephemeral(true)
-        ).await?;
+    if ctx.author().id != USER_OWNER {
+        send_msg(ctx, "You are not the owner, reporting incident.", true).await?;
 
         // dm, log, do something
-        println!("ALERT USER {} TRIED TO SHUT OFF BOT", ctx.author().tag());
+        println!("ALERT!!! USER {} TRIED TO SHUT OFF BOT", ctx.author().tag());
         return Ok(());
     }
 
@@ -31,7 +24,6 @@ pub async fn quit(ctx: Context<'_>) -> Result<(), Error> {
 
     // shutdown all instances of the bot in each guild
     ctx.framework().shard_manager().shutdown_all().await;
-
 
     Ok(())
 }
@@ -41,7 +33,9 @@ pub async fn quit(ctx: Context<'_>) -> Result<(), Error> {
 #[allow(unused)]
 #[poise::command(prefix_command, slash_command)]
 pub async fn save_db(ctx: Context<'_>) -> Result<(), Error> {
-    todo!("should call sql statement to save db");
+    if ctx.author().id != USER_OWNER {
+        todo!("should call sql statement to save db");
+    }
     Ok(())
 }
 

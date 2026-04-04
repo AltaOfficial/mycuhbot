@@ -1,7 +1,7 @@
 use core::f32;
 use std::collections::HashMap;
 use std::fmt;
-use rand::Rng;
+use rand::RngExt;
 
 #[derive(Debug)]
 pub struct User {
@@ -23,7 +23,7 @@ impl fmt::Display for User {
     }
 }
 
-
+#[derive(Debug)]
 pub struct StockMarket {
     pub users: HashMap<String, User>, // Mapping of user_id to User object
     pub max_stocks: u32,
@@ -256,6 +256,9 @@ fn exp_weighted_change(rate: f32) -> f32 {
     (exp_value() % 50.0) + 1.0
 }
 
+
+// --- end of stock market functionality ---
+
 /*
 #[cfg(test)]
 mod tests {
@@ -293,4 +296,322 @@ mod tests {
 
 }
 */
+
+use poise::serenity_prelude as serenity;
+use crate::{Data, Error, Context};
+use crate::utils::send_embed;
+
+pub fn commands() -> Vec<poise::Command<Data, Error>> {
+    vec![
+        enter_market(),
+        buy_stock(),
+        sell_stock(),
+        random_event(),
+        file_for_bankruptcy(),
+        portfolio(),
+    ]
+}
+
+// --- helpers ---
+
+/// Resolve a Discord mention/tag like `@Username` or a raw user-id string into
+/// a Discord `UserId`, then return its stringified u64 (what we use as the
+/// stock-market key).
+#[allow(unused)]
+async fn resolve_company_id(ctx: Context<'_>, raw: &str) -> Result<String, Error> {
+    // Poise already parses a `serenity::User` argument for us, but when we
+    // receive it as a plain String we do it manually here.
+    let trimmed = raw.trim_matches(|c: char| !c.is_numeric());
+    if trimmed.is_empty() {
+        return Err("Could not parse a user-id from that input.".into());
+    }
+    Ok(trimmed.to_string())
+}
+
+// --- commands ---
+
+/// Buy [amount] shares of another user's company stock
+#[poise::command(prefix_command, slash_command)]
+pub async fn enter_market(ctx: Context<'_>) -> Result<(), Error> {
+
+}
+
+/// Buy [amount] shares of another user's company stock
+#[poise::command(prefix_command, slash_command)]
+pub async fn buy_stock(
+    ctx: Context<'_>,
+
+    #[description = "User whose stock you want to buy"]
+    company: serenity::User,
+
+    #[description = "Number of shares to buy"]
+    amount: u32,
+) -> Result<(), Error> {
+    let buyer_id  = ctx.author().id.to_string();
+    let seller_id = company.id.to_string();
+
+    if buyer_id == seller_id {
+        send_embed(ctx, "❌ Invalid trade", "You cannot buy your own stock.", 0xFF0000).await?;
+        return Ok(());
+    }
+
+    let mut market = ctx.data().market.lock().await;
+
+    // Make sure both parties are registered
+    if !market.get_users().contains_key(&buyer_id) {
+        send_embed(ctx, "❌ Not registered",
+            "You don't have a market account yet. Use `/join` first.", 0xFF0000).await?;
+        return Ok(());
+    }
+    if !market.get_users().contains_key(&seller_id) {
+        send_embed(ctx, "❌ Unknown company",
+            "That user is not listed on the market.", 0xFF0000).await?;
+        return Ok(());
+    }
+
+    let seller_price  = market.get_user_info(&seller_id).defined_stock_amount_price.1;
+    let seller_avail  = market.get_user_info(&seller_id).defined_stock_amount_price.0;
+    let buyer_balance = market.get_user_info(&buyer_id).bal;
+    let total_cost    = seller_price * amount as f32;
+
+    if buyer_balance < total_cost {
+        send_embed(ctx, "❌ Insufficient funds",
+            &format!("You need **${:.2}** but only have **${:.2}**.", total_cost, buyer_balance),
+            0xFF0000).await?;
+        return Ok(());
+    }
+    if seller_avail < amount {
+        send_embed(ctx, "❌ Not enough shares",
+            &format!("{} only has **{}** shares available.", company.name, seller_avail),
+            0xFF0000).await?;
+        return Ok(());
+    }
+
+    market.buy_stock(&buyer_id, &seller_id, amount);
+
+    // TODO: db::record_transaction(&buyer_id, &seller_id, amount, total_cost, "buy").await?;
+
+    let new_price = market.get_user_info(&seller_id).defined_stock_amount_price.1;
+    send_embed(
+        ctx,
+        "✅ Purchase complete",
+        &format!(
+            "You bought **{}** share(s) of **{}** for **${:.2}**.\n\
+             New share price: **${:.4}**",
+            amount, company.name, total_cost, new_price
+        ),
+        0x00C853,
+    ).await?;
+
+    Ok(())
+}
+
+/// Sell [amount] of your own company's shares back to the market
+#[poise::command(prefix_command, slash_command)]
+pub async fn sell_stock(
+    ctx: Context<'_>,
+
+    #[description = "User who currently holds your shares (pass yourself to reclaim from market)"]
+    holder: serenity::User,
+
+    #[description = "Number of shares to sell"]
+    amount: u32,
+) -> Result<(), Error> {
+    let seller_id = ctx.author().id.to_string();
+    let holder_id = holder.id.to_string();
+
+    let mut market = ctx.data().market.lock().await;
+
+    if !market.get_users().contains_key(&seller_id) {
+        send_embed(ctx, "❌ Not registered",
+            "You don't have a market account yet. Use `/join` first.", 0xFF0000).await?;
+        return Ok(());
+    }
+
+    // Check the holder actually owns enough of the seller's stock
+    let shares_held = market
+        .get_user_info(&holder_id)
+        .company_stock_owned
+        .get(&seller_id)
+        .copied()
+        .unwrap_or(0);
+
+    if shares_held < amount {
+        send_embed(ctx, "❌ Not enough shares",
+            &format!("{} only holds **{}** of your shares.", holder.name, shares_held),
+            0xFF0000).await?;
+        return Ok(());
+    }
+
+    let price      = market.get_user_info(&seller_id).defined_stock_amount_price.1;
+    let total_gain = price * amount as f32;
+
+    market.sell_stock(&seller_id, &holder_id, amount);
+
+    // TODO: db::record_transaction(&seller_id, &holder_id, amount, total_gain, "sell").await?;
+
+    let new_price = market.get_user_info(&seller_id).defined_stock_amount_price.1;
+    send_embed(
+        ctx,
+        "✅ Sale complete",
+        &format!(
+            "You sold **{}** share(s) for **${:.2}** total.\n\
+             New share price: **${:.4}**",
+            amount, total_gain, new_price
+        ),
+        0x00C853,
+    ).await?;
+
+    Ok(())
+}
+
+/// Trigger a random market event that shifts stock prices
+#[poise::command(prefix_command, slash_command)]
+pub async fn random_event(ctx: Context<'_>) -> Result<(), Error> {
+    let mut market = ctx.data().market.lock().await;
+
+    if market.get_users().is_empty() {
+        send_embed(ctx, "📭 Empty market",
+            "No users are registered yet.", 0xFFAA00).await?;
+        return Ok(());
+    }
+
+    // Capture a snapshot of prices before the event so we can report deltas
+    let before: std::collections::HashMap<String, f32> = market
+        .get_users()
+        .iter()
+        .map(|(id, u)| (id.clone(), u.defined_stock_amount_price.1))
+        .collect();
+
+    market.random_market_event();
+
+    let mut description = String::from("**Price changes this event:**\n");
+    for (id, user) in market.get_users() {
+        let old = before.get(id).copied().unwrap_or(0.0);
+        let new = user.defined_stock_amount_price.1;
+        let diff = new - old;
+        let arrow = if diff >= 0.0 { "🟢 +" } else { "🔴 " };
+        description.push_str(&format!(
+            "<@{id}>: ${old:.4} → ${new:.4}  ({arrow}{diff:.4})\n"
+        ));
+    }
+
+    // TODO: db::log_market_event(&description).await?;
+
+    send_embed(ctx, "🎲 Market event occurred!", &description, 0x2196F3).await?;
+    Ok(())
+}
+
+/// Wipe your account and return all outstanding shares to their issuers
+#[poise::command(prefix_command, slash_command)]
+pub async fn file_for_bankruptcy(ctx: Context<'_>) -> Result<(), Error> {
+    use crate::utils::{send_confirmation_msg, user_choice_from_msg, ConfirmResult, create_embed, EXPIRE_TIME};
+
+    let author    = ctx.author();
+    let author_id = author.id.to_string();
+
+    {
+        let market = ctx.data().market.lock().await;
+        if !market.get_users().contains_key(&author_id) {
+            send_embed(ctx, "❌ Not registered",
+                "You don't have a market account to liquidate.", 0xFF0000).await?;
+            return Ok(());
+        }
+    }
+
+    // Ask the user to confirm via DM buttons
+    let embed = create_embed(
+        "⚠️ Confirm bankruptcy",
+        "Are you sure you want to file for bankruptcy?\n\
+         **This is irreversible.** All your shares will be returned and \
+         your account will be deleted.",
+        0xFF6600,
+    ).await?;
+
+    let dm_result = send_confirmation_msg(ctx, author, embed).await;
+    if dm_result.is_err() {
+        send_embed(ctx, "❌ DMs disabled",
+            "Please enable DMs from server members so I can confirm this action.", 0xFF0000).await?;
+        return Ok(());
+    }
+
+    let choice = user_choice_from_msg(
+        ctx,
+        author.id,
+        ctx.id().to_string(),
+        EXPIRE_TIME,
+    ).await;
+
+    match choice {
+        ConfirmResult::Yes => {
+            let mut market = ctx.data().market.lock().await;
+            market.bankruptcy(&author_id);
+
+            // TODO: db::delete_user_account(&author_id).await?;
+
+            send_embed(
+                ctx,
+                "🏳️ Bankruptcy filed",
+                "Your account has been removed and all shares returned.",
+                0x9E9E9E,
+            ).await?;
+        }
+        ConfirmResult::No => {
+            send_embed(ctx, "↩️ Cancelled", "Bankruptcy cancelled.", 0x9E9E9E).await?;
+        }
+        ConfirmResult::Timeout => {
+            send_embed(ctx, "⏰ Timed out",
+                "Confirmation window expired. No action taken.", 0x9E9E9E).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Show your current balance, stock price, and portfolio
+#[poise::command(prefix_command, slash_command)]
+pub async fn portfolio(ctx: Context<'_>) -> Result<(), Error> {
+    let user_id = ctx.author().id.to_string();
+    let market  = ctx.data().market.lock().await;
+
+    let user = match market.get_users().get(&user_id) {
+        Some(u) => u,
+        None => {
+            send_embed(ctx, "❌ Not registered",
+                "You don't have a market account yet. Use `/join` first.", 0xFF0000).await?;
+            return Ok(());
+        }
+    };
+
+    let mut owned = String::new();
+    for (company_id, &amount) in &user.company_stock_owned {
+        if amount > 0 {
+            let price = market
+                .get_users()
+                .get(company_id)
+                .map(|u| u.defined_stock_amount_price.1)
+                .unwrap_or(0.0);
+            owned.push_str(&format!(
+                "<@{company_id}>: **{amount}** share(s) @ ${price:.4} each\n"
+            ));
+        }
+    }
+    if owned.is_empty() {
+        owned = "*None*".to_string();
+    }
+
+    let description = format!(
+        "**Balance:** ${:.2}\n\
+         **Your share price:** ${:.4}\n\
+         **Shares available:** {}\n\n\
+         **Holdings:**\n{}",
+        user.bal,
+        user.defined_stock_amount_price.1,
+        user.defined_stock_amount_price.0,
+        owned,
+    );
+
+    send_embed(ctx, &format!("📊 {}'s Portfolio", ctx.author().name), &description, 0x7C4DFF).await?;
+    Ok(())
+}
 

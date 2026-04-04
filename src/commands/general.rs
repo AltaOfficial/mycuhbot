@@ -1,4 +1,4 @@
-#[allow(unused_imports)]
+use crate::utils::{send_msg, edit_msg};
 use crate::{Data, Error, Context};
 
 
@@ -42,11 +42,8 @@ If you want more information about a specific command, try:\n\
 /// Pong? 
 #[poise::command(prefix_command, slash_command)]
 pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.send(
-        poise::CreateReply::default()
-            .content("Pong!")
-            .ephemeral(true)
-    ).await?;
+    send_msg(ctx, "Pong!", true).await?;
+    println!("User: {} Pinged!", ctx.author().id);
 
     Ok(())
 }
@@ -57,22 +54,14 @@ pub async fn latency(ctx: Context<'_>) -> Result<(), Error> {
     use std::time::Instant;
 
     let start_time = Instant::now();
-    let msg = ctx.send(
-        poise::CreateReply::default()
-            .content("Calculating ping...")
-            .ephemeral(true),
-    ).await?;
+    let handle = send_msg(ctx, "Calculating ping...", true).await?;
     let end_time = Instant::now();
 
-    msg.edit(
-        ctx,
-        poise::CreateReply::default()
-            .content(format!("{} ms", (end_time - start_time).as_millis()))
-            .ephemeral(true),
-    )
-    .await?;
+    let calc = (end_time - start_time).as_millis();
+
+    edit_msg(ctx, &handle, format!("{}ms", calc).as_str() ).await?;
+    println!("Lag: {}ms", calc);
 
     Ok(())
 }
-
 

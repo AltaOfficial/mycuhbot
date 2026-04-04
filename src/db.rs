@@ -1,7 +1,6 @@
 use once_cell::sync::OnceCell;
 use crate::{Data, Error, Context};
-use crate::utils::{ConfirmResult, send_hidden_msg, user_choice_from_msg};
-use crate::commands::account::EXPIRE_TIME;
+use crate::utils::*;
 
 static DB_POOL: OnceCell<sqlx::SqlitePool> = OnceCell::new();
 
@@ -58,7 +57,7 @@ pub async fn init_user_account(ctx: poise::Context<'_, Data, Error>) -> Result<(
 
 
 pub async fn ask_user_join_db(ctx: Context<'_>) -> Result<ConfirmResult, Error> {
-    let _msg = send_hidden_msg(ctx, "do you want to join the market?" );
+    let _msg = send_msg(ctx, "do you want to join the market?", true);
 
     let option = user_choice_from_msg(ctx, ctx.author().id, ctx.id().to_string(), EXPIRE_TIME);
 

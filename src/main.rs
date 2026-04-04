@@ -5,15 +5,21 @@ use poise::serenity_prelude as serenity;
 use serenity::GatewayIntents;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 mod commands;
 mod db;
 mod utils;
 
+use commands::stock_market::StockMarket;
+
+
+// Data is shared data between different chats
 #[derive(Debug)]
 pub struct Data {
-    command_counter: Mutex<HashMap<String, u64>>,
+    command_counter: Mutex<HashMap<String, u64>>, // I really don't see a purpose to this data
+    pub market: Arc<Mutex<StockMarket>>,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -38,7 +44,8 @@ async fn main() {
                 let mut cmds = Vec::new();
                 cmds.extend(commands::general::commands());
                 cmds.extend(commands::account::commands());
-                //cmds.extend(commands::owner::commands());
+                cmds.extend(commands::owner::commands());
+                cmds.extend(commands::stock_market::commands());
 
                 cmds
             },
@@ -77,6 +84,7 @@ async fn main() {
 
                 Ok(Data {
                     command_counter: Mutex::new(HashMap::new()),
+                    market: Arc::new(Mutex::new(StockMarket::new())),
                 })
             })
         })
