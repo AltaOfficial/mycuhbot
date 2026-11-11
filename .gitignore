@@ -1,9 +1,6 @@
 /target
 .env
-.env.old
 
 db.sqlite
 migrations/
-
-node_modules
 
