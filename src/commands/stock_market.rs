@@ -330,10 +330,35 @@ async fn resolve_company_id(ctx: Context<'_>, raw: &str) -> Result<String, Error
 
 // --- commands ---
 
-/// Buy [amount] shares of another user's company stock
+/// Enter the stock market by registering with the system
 #[poise::command(prefix_command, slash_command)]
 pub async fn enter_market(ctx: Context<'_>) -> Result<(), Error> {
+    let user_id = ctx.author().id.to_string();
 
+    let mut market = ctx.data().market.lock().await;
+
+    // Check if user is already registered
+    if market.get_users().contains_key(&user_id) {
+        send_embed(
+            ctx,
+            "❌ Already registered",
+            "You're already registered in the stock market.",
+            0xFF0000
+        ).await?;
+        return Ok(());
+    }
+
+    // Add user to the market
+    market.add_user(&user_id);
+
+    send_embed(
+        ctx,
+        "✅ Successfully joined market",
+        "You've been registered in the stock market! You now have a starting balance of $10.00 and can begin trading.",
+        0x00C853
+    ).await?;
+
+    Ok(())
 }
 
 /// Buy [amount] shares of another user's company stock
